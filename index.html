@@ -475,14 +475,14 @@ var liveData = {
    HISTORICAL CHART DATA (static — your real history)
    ══════════════════════════════════════════════════════════════ */
 const HIST = {
-  labels: ['Jan 6','Jan 13','Jan 20','Jan 27','Feb 3','Feb 10','Feb 17','Feb 24','Mar 3','Mar 10','Mar 17','Mar 24','Mar 31','Apr 7','Apr 14','Apr 21','Apr 28','May 5','May 12'],
-  petron_ron91:  [65.9,65.3,64.8,64.2,63.7,63.1,62.8,62.1,73.4,84.5,94.2,98.6,100.8,101.4,97.2,89.8,84.65,83.98,84.45],
-  shell_ron91:   [68.8,68.2,67.7,67.1,66.6,66.0,65.7,65.0,76.3,87.4,97.1,101.5,103.7,104.3,100.1,92.7,87.55,86.88,87.35],
+  labels: ['Jan 6','Jan 13','Jan 20','Jan 27','Feb 3','Feb 10','Feb 17','Feb 24','Mar 3','Mar 10','Mar 17','Mar 24','Mar 31','Apr 7','Apr 14','Apr 21','Apr 28','May 5','May 15'],
+  petron_ron91:  [65.9,65.3,64.8,64.2,63.7,63.1,62.8,62.1,73.4,84.5,94.2,98.6,100.8,101.4,97.2,89.8,84.65,83.98,73.25],
+  shell_ron91:   [68.8,68.2,67.7,67.1,66.6,66.0,65.7,65.0,76.3,87.4,97.1,101.5,103.7,104.3,100.1,92.7,87.55,86.88,74.35],
   unioil_ron91:  [63.5,63.0,62.5,62.0,61.5,61.0,60.7,60.0,71.0,82.0,91.7,96.1,98.3,98.9,94.7,87.3,83.19,82.52,83.03],
   petron_ron95:  [68.9,68.3,67.8,67.2,66.7,66.1,65.8,65.1,76.4,87.5,97.2,101.6,103.8,104.4,100.2,92.8,87.65,86.98,87.55],
   shell_ron95:   [71.8,71.2,70.7,70.1,69.6,69.0,68.7,68.0,79.3,90.4,100.1,104.5,106.7,107.3,103.1,95.7,90.55,89.88,90.45],
   unioil_ron95:  [66.5,66.0,65.5,65.0,64.5,64.0,63.7,63.0,74.0,85.0,94.7,99.1,101.3,101.9,97.7,90.3,85.09,84.42,85.03],
-  petron_diesel: [59.47,58.87,58.27,57.67,57.07,56.47,55.87,55.27,76.4,97.1,108.8,118.4,128.7,134.6,121.8,105.2,95.15,89.47,79.90],
+  petron_diesel: [59.47,58.87,58.27,57.67,57.07,56.47,55.87,55.27,76.4,97.1,108.8,118.4,128.7,134.6,121.8,105.2,95.15,89.47,64.50],
   shell_diesel:  [63.36,62.76,62.16,61.56,60.96,60.36,59.76,59.16,80.29,101.0,112.7,122.3,132.6,138.5,125.7,109.1,99.04,93.36,83.79],
   unioil_diesel: [55.57,54.97,54.37,53.77,53.17,52.57,51.97,51.37,72.5,93.1,104.8,114.4,124.7,130.6,117.8,101.2,91.15,85.47,76.58],
 };
@@ -490,32 +490,34 @@ const HIST = {
 /* ══════════════════════════════════════════════════════════════
    STATIC FALLBACK DATA (used until live data loads)
    ══════════════════════════════════════════════════════════════ */
+// Static fallback prices — used before live data loads.
+// Updated to current real pump prices (week of May 12-18 → now May 15, 2026).
 var PRICES = {
-  r91:  { petron:84.45, shell:87.35, lw_p:83.98, lw_s:86.88, adj:'▲+₱0.47/L', chgDir:'up', label:'RON 91' },
-  r95:  { petron:87.55, shell:90.45, lw_p:87.08, lw_s:89.98, adj:'▲+₱0.47/L', chgDir:'up', label:'RON 95' },
-  dsl:  { petron:79.90, shell:83.79, lw_p:89.47, lw_s:93.36, adj:'▼−₱9.57/L', chgDir:'down', label:'Diesel std' },
+  r91:  { petron:73.25, shell:74.35, lw_p:73.05, lw_s:74.15, adj:'+0.20/L', chgDir:'up',   label:'RON 91' },
+  r95:  { petron:76.15, shell:77.35, lw_p:75.95, lw_s:77.15, adj:'+0.20/L', chgDir:'up',   label:'RON 95' },
+  dsl:  { petron:64.50, shell:66.29, lw_p:64.60, lw_s:66.39, adj:'-0.10/L', chgDir:'down', label:'Diesel std' },
 };
 
 /* City prices (NCR + Pampanga, brand mode included) */
 var CITY_PRICES = {
-  'Quezon City': {r91:{avg:84.82,lo:81.73,hi:87.35,cheapest:'Flying V'},r95:{avg:87.92,lo:84.83,hi:90.45,cheapest:'Flying V'},dsl:{avg:76.29,lo:73.15,hi:83.79,cheapest:'Flying V'}},
-  'Pasig':       {r91:{avg:85.10,lo:82.20,hi:87.35,cheapest:'Seaoil'},  r95:{avg:88.20,lo:85.30,hi:90.45,cheapest:'Seaoil'},  dsl:{avg:80.45,lo:77.50,hi:83.79,cheapest:'Seaoil'}},
-  'Manila':      {r91:{avg:85.40,lo:82.50,hi:87.35,cheapest:'Flying V'},r95:{avg:88.50,lo:85.60,hi:90.45,cheapest:'Cleanfuel'},dsl:{avg:80.70,lo:73.15,hi:83.79,cheapest:'Flying V'}},
-  'Makati':      {r91:{avg:86.20,lo:84.00,hi:90.45,cheapest:'Cleanfuel'},r95:{avg:89.30,lo:87.10,hi:93.40,cheapest:'Seaoil'}, dsl:{avg:81.50,lo:79.50,hi:87.50,cheapest:'Unioil'}},
-  'Caloocan':    {r91:{avg:84.60,lo:81.73,hi:87.35,cheapest:'Flying V'},r95:{avg:87.70,lo:84.83,hi:90.45,cheapest:'Phoenix'}, dsl:{avg:79.90,lo:76.50,hi:83.79,cheapest:'Petron'}},
-  'Taguig':      {r91:{avg:85.80,lo:83.50,hi:87.35,cheapest:'Seaoil'}, r95:{avg:88.90,lo:86.60,hi:90.45,cheapest:'Seaoil'},  dsl:{avg:81.20,lo:78.90,hi:83.79,cheapest:'Seaoil'}},
-  'Marikina':    {r91:{avg:84.90,lo:82.40,hi:87.35,cheapest:'Petron'}, r95:{avg:88.00,lo:85.50,hi:90.45,cheapest:'Petron'},  dsl:{avg:80.10,lo:77.80,hi:83.79,cheapest:'Petron'}},
-  'Mandaluyong': {r91:{avg:85.60,lo:83.10,hi:87.35,cheapest:'Petron'}, r95:{avg:88.70,lo:86.20,hi:90.45,cheapest:'Petron'},  dsl:{avg:81.00,lo:78.70,hi:83.79,cheapest:'Petron'}},
-  'Paranaque':   {r91:{avg:84.70,lo:81.73,hi:87.35,cheapest:'Flying V'},r95:{avg:87.80,lo:84.83,hi:90.45,cheapest:'Flying V'},dsl:{avg:79.80,lo:76.20,hi:83.79,cheapest:'Flying V'}},
-  'Las Pinas':   {r91:{avg:84.65,lo:81.73,hi:87.35,cheapest:'Flying V'},r95:{avg:87.75,lo:84.83,hi:90.45,cheapest:'Flying V'},dsl:{avg:79.75,lo:76.10,hi:83.79,cheapest:'Flying V'}},
-  'Muntinlupa':  {r91:{avg:84.80,lo:82.30,hi:87.35,cheapest:'Seaoil'}, r95:{avg:87.90,lo:85.40,hi:90.45,cheapest:'Seaoil'},  dsl:{avg:79.95,lo:77.40,hi:83.79,cheapest:'Seaoil'}},
-  'Valenzuela':  {r91:{avg:84.55,lo:81.73,hi:87.35,cheapest:'Flying V'},r95:{avg:87.65,lo:84.83,hi:90.45,cheapest:'Cleanfuel'},dsl:{avg:79.70,lo:76.00,hi:83.79,cheapest:'Petron'}},
-  'Malabon':     {r91:{avg:84.60,lo:82.10,hi:87.35,cheapest:'Petron'}, r95:{avg:87.70,lo:85.20,hi:90.45,cheapest:'Petron'},  dsl:{avg:79.85,lo:77.30,hi:83.79,cheapest:'Petron'}},
-  'Pasay':       {r91:{avg:85.30,lo:82.80,hi:87.35,cheapest:'Seaoil'}, r95:{avg:88.40,lo:85.90,hi:90.45,cheapest:'Seaoil'},  dsl:{avg:80.60,lo:78.10,hi:83.79,cheapest:'Seaoil'}},
-  'San Fernando':{r91:{avg:86.40,lo:83.50,hi:89.00,cheapest:'Petron'}, r95:{avg:89.50,lo:86.60,hi:92.10,cheapest:'Petron'},  dsl:{avg:81.80,lo:79.00,hi:85.50,cheapest:'Phoenix'}},
-  'Angeles City':{r91:{avg:86.80,lo:84.00,hi:89.40,cheapest:'Petron'}, r95:{avg:89.90,lo:87.10,hi:92.50,cheapest:'Seaoil'},  dsl:{avg:82.20,lo:79.40,hi:85.90,cheapest:'Seaoil'}},
-  'Mabalacat':   {r91:{avg:86.60,lo:83.80,hi:89.20,cheapest:'Petron'}, r95:{avg:89.70,lo:86.90,hi:92.30,cheapest:'Petron'},  dsl:{avg:82.00,lo:79.20,hi:85.70,cheapest:'Petron'}},
-  'Clark (CSEZ)':{r91:{avg:87.20,lo:85.00,hi:90.00,cheapest:'Shell'},  r95:{avg:90.30,lo:88.10,hi:93.10,cheapest:'Shell'},   dsl:{avg:82.60,lo:80.40,hi:86.30,cheapest:'Shell'}},
+  'Quezon City': {r91:{avg:73.62,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.52,lo:73.43,hi:79.05,cheapest:'Flying V'},dsl:{avg:60.89,lo:57.75,hi:68.39,cheapest:'Flying V'}},
+  'Pasig':       {r91:{avg:73.9,lo:71.0,hi:76.15,cheapest:'Seaoil'},  r95:{avg:76.8,lo:73.9,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:65.05,lo:62.1,hi:68.39,cheapest:'Seaoil'}},
+  'Manila':      {r91:{avg:74.2,lo:71.3,hi:76.15,cheapest:'Flying V'},r95:{avg:77.1,lo:74.2,hi:79.05,cheapest:'Cleanfuel'},dsl:{avg:65.3,lo:57.75,hi:68.39,cheapest:'Flying V'}},
+  'Makati':      {r91:{avg:75.0,lo:72.8,hi:79.25,cheapest:'Cleanfuel'},r95:{avg:77.9,lo:75.7,hi:82.0,cheapest:'Seaoil'}, dsl:{avg:66.1,lo:64.1,hi:72.1,cheapest:'Unioil'}},
+  'Caloocan':    {r91:{avg:73.4,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.3,lo:73.43,hi:79.05,cheapest:'Phoenix'}, dsl:{avg:64.5,lo:61.1,hi:68.39,cheapest:'Petron'}},
+  'Taguig':      {r91:{avg:74.6,lo:72.3,hi:76.15,cheapest:'Seaoil'}, r95:{avg:77.5,lo:75.2,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:65.8,lo:63.5,hi:68.39,cheapest:'Seaoil'}},
+  'Marikina':    {r91:{avg:73.7,lo:71.2,hi:76.15,cheapest:'Petron'}, r95:{avg:76.6,lo:74.1,hi:79.05,cheapest:'Petron'},  dsl:{avg:64.7,lo:62.4,hi:68.39,cheapest:'Petron'}},
+  'Mandaluyong': {r91:{avg:74.4,lo:71.9,hi:76.15,cheapest:'Petron'}, r95:{avg:77.3,lo:74.8,hi:79.05,cheapest:'Petron'},  dsl:{avg:65.6,lo:63.3,hi:68.39,cheapest:'Petron'}},
+  'Paranaque':   {r91:{avg:73.5,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.4,lo:73.43,hi:79.05,cheapest:'Flying V'},dsl:{avg:64.4,lo:60.8,hi:68.39,cheapest:'Flying V'}},
+  'Las Pinas':   {r91:{avg:73.45,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.35,lo:73.43,hi:79.05,cheapest:'Flying V'},dsl:{avg:64.35,lo:60.7,hi:68.39,cheapest:'Flying V'}},
+  'Muntinlupa':  {r91:{avg:73.6,lo:71.1,hi:76.15,cheapest:'Seaoil'}, r95:{avg:76.5,lo:74.0,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:64.55,lo:62.0,hi:68.39,cheapest:'Seaoil'}},
+  'Valenzuela':  {r91:{avg:73.35,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.25,lo:73.43,hi:79.05,cheapest:'Cleanfuel'},dsl:{avg:64.3,lo:60.6,hi:68.39,cheapest:'Petron'}},
+  'Malabon':     {r91:{avg:73.4,lo:70.9,hi:76.15,cheapest:'Petron'}, r95:{avg:76.3,lo:73.8,hi:79.05,cheapest:'Petron'},  dsl:{avg:64.45,lo:61.9,hi:68.39,cheapest:'Petron'}},
+  'Pasay':       {r91:{avg:74.1,lo:71.6,hi:76.15,cheapest:'Seaoil'}, r95:{avg:77.0,lo:74.5,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:65.2,lo:62.7,hi:68.39,cheapest:'Seaoil'}},
+  'San Fernando':{r91:{avg:75.2,lo:72.3,hi:77.8,cheapest:'Petron'}, r95:{avg:78.1,lo:75.2,hi:80.7,cheapest:'Petron'},  dsl:{avg:66.4,lo:63.6,hi:70.1,cheapest:'Phoenix'}},
+  'Angeles City':{r91:{avg:75.6,lo:72.8,hi:78.2,cheapest:'Petron'}, r95:{avg:78.5,lo:75.7,hi:81.1,cheapest:'Seaoil'},  dsl:{avg:66.8,lo:64.0,hi:70.5,cheapest:'Seaoil'}},
+  'Mabalacat':   {r91:{avg:75.4,lo:72.6,hi:78.0,cheapest:'Petron'}, r95:{avg:78.3,lo:75.5,hi:80.9,cheapest:'Petron'},  dsl:{avg:66.6,lo:63.8,hi:70.3,cheapest:'Petron'}},
+  'Clark (CSEZ)':{r91:{avg:76.0,lo:73.8,hi:78.8,cheapest:'Shell'},  r95:{avg:78.9,lo:76.7,hi:81.7,cheapest:'Shell'},   dsl:{avg:67.2,lo:65.0,hi:70.9,cheapest:'Shell'}},
 };
 
 var NCR_CITIES_LIST = ['Quezon City','Pasig','Manila','Makati','Caloocan','Taguig','Marikina','Mandaluyong','Paranaque','Las Pinas','Muntinlupa','Valenzuela','Malabon','Pasay'];
@@ -523,6 +525,12 @@ var PAMPANGA_CITIES_LIST = ['San Fernando','Angeles City','Mabalacat','Clark (CS
 var activeRegion = 'ncr';
 var activeBrand = 'avg';
 var activeCityFuel = 'r91';
+
+// IMMUTABLE BASELINE — deep copy taken once at load time.
+// All live-data deltas are applied from this original, never from the
+// already-adjusted CITY_PRICES, so prices cannot compound on every refresh.
+var CITY_PRICES_BASELINE = JSON.parse(JSON.stringify(CITY_PRICES));
+var BASELINE_PETRON = { ron91: 73.25, ron95: 76.15, diesel_std: 64.50 };
 
 /* ══════════════════════════════════════════════════════════════
    FETCH LIVE FUEL DATA
@@ -702,15 +710,19 @@ function applyLiveFuelData(d) {
     // 6. Update brand cards
     buildBrandCards(d);
 
-    // 7. Update city prices with live avg (adjust by same delta from Petron prices)
+    // 7. Update city prices using delta from IMMUTABLE BASELINE — not from current CITY_PRICES.
+    //    This ensures prices don't compound downward on every refresh.
     if (p.petron && p.petron.ron91) {
-      var delta91 = p.petron.ron91 - 84.45;
-      var delta95 = (p.petron.ron95 || 87.55) - 87.55;
-      var deltaDsl = (p.petron.diesel_std || 79.90) - 79.90;
+      var delta91  = p.petron.ron91              - BASELINE_PETRON.ron91;
+      var delta95  = (p.petron.ron95  || BASELINE_PETRON.ron95)  - BASELINE_PETRON.ron95;
+      var deltaDsl = (p.petron.diesel_std || BASELINE_PETRON.diesel_std) - BASELINE_PETRON.diesel_std;
       for (var city in CITY_PRICES) {
-        CITY_PRICES[city].r91.avg = Math.round((CITY_PRICES[city].r91.avg + delta91)*100)/100;
-        CITY_PRICES[city].r95.avg = Math.round((CITY_PRICES[city].r95.avg + delta95)*100)/100;
-        CITY_PRICES[city].dsl.avg = Math.round((CITY_PRICES[city].dsl.avg + deltaDsl)*100)/100;
+        // Always start from the frozen baseline value, then add the current delta
+        if (CITY_PRICES_BASELINE[city]) {
+          CITY_PRICES[city].r91.avg = Math.round((CITY_PRICES_BASELINE[city].r91.avg + delta91) * 100) / 100;
+          CITY_PRICES[city].r95.avg = Math.round((CITY_PRICES_BASELINE[city].r95.avg + delta95) * 100) / 100;
+          CITY_PRICES[city].dsl.avg = Math.round((CITY_PRICES_BASELINE[city].dsl.avg + deltaDsl) * 100) / 100;
+        }
       }
     }
   }
@@ -954,7 +966,7 @@ function calc() {
 /* ══════════════════════════════════════════════════════════════
    CITY PRICE GRID
    ══════════════════════════════════════════════════════════════ */
-var NCR_AVG = { r91:84.45, r95:87.55, dsl:79.90 };
+var NCR_AVG = { r91:73.25, r95:76.15, dsl:64.50 };
 
 function switchRegion(val) { activeRegion = val; buildCityPriceGrid(); }
 function switchCityFuel(type, btn) {
