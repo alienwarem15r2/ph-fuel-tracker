@@ -108,29 +108,32 @@ async function handleFuel(apiKey, res) {
   const prompt =
 `Today is ${today} (Philippine time).
 
-Search the web for the most recent DOE (Department of Energy Philippines) weekly petroleum price monitoring report and the current effective pump prices for Petron, Shell, and Unioil in Metro Manila NCR.
+Search the web for:
+1. The most recent DOE (Department of Energy Philippines) weekly petroleum price monitoring report — find the LATEST effective date and adjustment amounts (e.g. +0.20/L gasoline, -0.10/L diesel)
+2. The ACTUAL CURRENT PUMP PRICES (not DOE SRP baselines) at Petron, Shell, and Unioil stations in Metro Manila NCR as of today
 
-Respond with ONLY a JSON object. Do NOT include markdown code fences. Do NOT include any explanation. Your entire response must be valid JSON starting with { and ending with }.
+IMPORTANT PRICE SANITY CHECK: Philippine pump prices as of 2025-2026 are in the range of ₱65-₱90/L for gasoline and ₱60-₱85/L for diesel. If your search returns prices below ₱60/L or above ₱120/L for regular grades, those are outdated — use the most recent data you can find.
 
-Use this exact structure:
+Respond with ONLY a JSON object. No markdown fences. No explanation. Start with { and end with }.
+
 {
   "effective_date": "e.g. May 20, 2026",
   "week_label": "e.g. Week of May 19-25, 2026",
   "doe_adjustment": {
-    "gasoline_ron91_95": "+0.47",
-    "diesel_std": "-9.57",
-    "kerosene": "-13.30",
-    "lpg_per_kg": "+1.22",
+    "gasoline_ron91_95": "+0.20",
+    "diesel_std": "-0.10",
+    "kerosene": "-0.15",
+    "lpg_per_kg": "+0.50",
     "note": "One-sentence context for this week's adjustment"
   },
   "prices": {
-    "petron": { "ron91": 84.45, "ron95": 87.55, "ron100": 97.80, "diesel_std": 79.90, "diesel_prem": 83.15, "kerosene": 79.20 },
-    "shell":  { "ron91": 87.35, "ron95": 90.45, "ron97": 94.20, "diesel_std": 83.79, "diesel_prem": 87.50, "kerosene": 83.00 },
-    "unioil": { "ron91": 83.49, "ron95": 85.99, "diesel_std": 76.19 }
+    "petron": { "ron91": 73.25, "ron95": 76.15, "ron100": 86.60, "diesel_std": 64.50, "diesel_prem": 68.75, "kerosene": 63.75 },
+    "shell":  { "ron91": 74.35, "ron95": 77.35, "ron97": 80.99, "diesel_std": 66.29, "diesel_prem": 70.99, "kerosene": 66.00 },
+    "unioil": { "ron91": 72.49, "ron95": 74.99, "diesel_std": 61.69 }
   },
-  "trend_context": "1-2 sentences on recent price trend and context",
+  "trend_context": "1-2 sentences on recent price trend",
   "next_week_signal": "Brief note on what to expect next Tuesday",
-  "fill_up_advice": "Practical 1-2 sentence advice for Filipino motorists this week",
+  "fill_up_advice": "Practical 1-2 sentence advice for Filipino motorists",
   "sources": ["url1", "url2"]
 }`;
 
@@ -142,7 +145,22 @@ Use this exact structure:
     return res.status(500).json({ error: "Fuel data parse error: " + json.error, debug_raw: (json.raw || "").slice(0, 300) });
   }
 
-  console.log("[chat.js] Fuel OK:", json.effective_date, "petron ron91:", json.prices?.petron?.ron91);
+  // ── Sanity check: reject obviously wrong prices ──
+  // Philippine pump prices 2025-2026 are roughly ₱60-₱95/L for regular grades.
+  // If the model hallucinated prices outside this window, reject rather than serve bad data.
+  const r91 = json.prices?.petron?.ron91;
+  if (r91 !== undefined) {
+    if (r91 < 55 || r91 > 130) {
+      console.error(`[chat.js] Fuel sanity FAIL: petron ron91=${r91} is out of realistic range ₱55-₱130. Rejecting.`);
+      return res.status(500).json({
+        error: `Sanity check failed: Petron RON 91 = ₱${r91} is outside the realistic range ₱55–₱130. ` +
+               "The model may have returned outdated or hallucinated data. Raw data returned to client as debug_raw.",
+        debug_raw: JSON.stringify(json).slice(0, 500)
+      });
+    }
+    console.log("[chat.js] Fuel OK:", json.effective_date, "petron ron91: ₱" + r91);
+  }
+
   return res.status(200).json(json);
 }
 
