@@ -1102,7 +1102,7 @@ async function sendAI() {
       // Keep history to last 10 messages to avoid token limits
       if (aiHistory.length > 10) aiHistory = aiHistory.slice(-10);
     } else if (data.error) {
-      addBubble('Error: ' + data.error.message, 'error');
+      addBubble('Error: ' + (data.error.message || JSON.stringify(data.error)), 'error');
       aiHistory.pop();
     }
   } catch (err) {
