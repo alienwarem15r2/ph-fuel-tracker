@@ -1354,40 +1354,156 @@ async function sendAI() {
 
 /* Power Interruption Tracker */
 const GRID_ALERTS = [
-  { level:'red',    times:['4:01 PM - 10:00 PM'],
+  { level:'red',
+    times:['1:01 PM - 3:00 PM','2:01 PM - 4:00 PM','3:01 PM - 5:00 PM',
+           '4:01 PM - 5:00 PM','5:01 PM - 7:00 PM','7:01 PM - 9:00 PM'],
     color:'#b83232', bg:'#fdeaea', border:'rgba(184,50,50,.2)' },
-  { level:'yellow', times:['3:01 PM - 4:00 PM','10:01 PM - 11:00 PM'],
+  { level:'yellow', times:['12:01 PM - 1:00 PM','9:01 PM - 10:00 PM'],
     color:'#8a5a00', bg:'#fef3dc', border:'rgba(138,90,0,.15)' },
 ];
 
 const INTERRUPTIONS = [
-  { city:'Pasig', barangay:'Multiple barangays', street:'Rotating brownout areas',
-    date:'May 14', time:'4:01 PM - 10:00 PM', reason:'NGCP Red Alert - scheduled rotating brownouts (today)', type:'emergency' },
-  { city:'Metro Manila', barangay:'Parts of Metro Manila', street:'Rotating brownouts',
-    date:'May 13', time:'3:23 PM - 8:00 PM', reason:'NGCP Red Alert emergency manual load dropping (MLD) - 920,000+ customers affected', type:'emergency' },
-  { city:'Quezon City', barangay:'Brgy. Mariana', street:'E. Rodriguez Sr. Ave. (Sta. Ignacia to Broadway)',
-    date:'May 15', time:'12:01 AM - 5:00 AM', reason:'Replacement and reconstruction of electricity facilities', type:'maintenance' },
-  { city:'Caloocan', barangay:'Brgy. Barrio', street:'Milagrosa St.',
-    date:'May 12-13', time:'11:00 PM - 5:00 AM', reason:'Line reconductoring and replacement of electricity poles', type:'maintenance' },
-  { city:'Manila', barangay:'Sampaloc', street:'Near Pina Ave.',
-    date:'May 6', time:'8:30 AM - 1:30 PM', reason:'Line conversion works', type:'maintenance' },
-  { city:'Makati', barangay:'Brgy. San Lorenzo', street:'Legaspi Village',
-    date:'May 5', time:'12:01 AM - 5:00 AM', reason:'Line maintenance works', type:'maintenance' },
-  { city:'Valenzuela', barangay:'Brgy. Ugong', street:'Mindanao Ave.',
-    date:'May 4', time:'10:00 AM - 3:00 PM', reason:'Line reconstruction works', type:'maintenance' },
-  { city:'Taguig', barangay:'Katuparan, Ugong, Pinagsama, North Signal Village', street:'Multiple streets',
-    date:'May 6-8', time:'Various hours', reason:'Line reconstruction works', type:'maintenance' },
-  { city:'Marikina', barangay:'No scheduled interruptions this week', street:'No active advisories',
-    date:'May 12-18', time:'—', reason:'No Meralco maintenance advisory issued for Marikina this week. Check back Sunday for next week\'s schedule.', type:'clear' },
-  // Pampanga — served by PELCO I, II, III (not Meralco) + NGCP MLD
-  { city:'Pampanga', barangay:'Parts of Pampanga (PELCO III areas)', street:'San Fernando, Angeles, Mabalacat, Clark',
-    date:'May 13', time:'4:00 PM - 8:00 PM', reason:'NGCP Red Alert MLD — PELCO III included in Luzon Grid rotational brownouts. Power distributor: PELCO I/II/III (not Meralco)', type:'emergency' },
-  { city:'Pampanga', barangay:'Brgy. Lourdes Sur, Del Pilar, Sindalan', street:'McArthur Highway, San Fernando',
-    date:'May 14', time:'8:00 AM - 3:00 PM', reason:'PELCO III scheduled line maintenance — transformer replacement works', type:'maintenance' },
-  { city:'Pampanga', barangay:'Angeles City (parts)', street:'Balibago, Clarkview',
-    date:'May 15', time:'9:00 AM - 4:00 PM', reason:'PELCO II line reconductoring works along NLEX corridor', type:'maintenance' },
+  // ── MAY 14, 2026 — NGCP RED ALERT, 6 MLD EVENTS ──
+  {
+    city: 'Metro Manila', barangay: 'Caloocan City',
+    street: 'Bagong Silang (Kaliwa/Kanan), Bagumbong, Camarin, Deparo, Tala, Talipapa',
+    date: 'May 14', time: '1:01 PM - 3:00 PM',
+    reason: 'NGCP Red Alert MLD Event 1 — Luzon Grid insufficient reserve',
+    type: 'emergency'
+  },
+  {
+    city: 'Quezon City', barangay: 'Multiple barangays',
+    street: 'Batasan Hills, Fairview, Greater Lagro, Holy Spirit, Kaligayahan/Novaliches, Pasong Putik, Pasong Tamo, Sauyo, Sta. Lucia/Novaliches, Teachers Vill. West',
+    date: 'May 14', time: '1:01 PM - 3:00 PM',
+    reason: 'NGCP Red Alert MLD Event 1',
+    type: 'emergency'
+  },
+  {
+    city: 'Marikina', barangay: 'Concepcion I, Marikina Hts, Nangka, Parang',
+    street: 'Multiple streets',
+    date: 'May 14', time: '1:01 PM - 3:00 PM & 2:01 PM - 4:00 PM',
+    reason: 'NGCP Red Alert MLD Events 1 & 2',
+    type: 'emergency'
+  },
+  {
+    city: 'Pasig', barangay: 'Maybunga, Pinagbuhatan, Rosario, Ugong',
+    street: 'Multiple streets',
+    date: 'May 14', time: '1:01 PM - 3:00 PM',
+    reason: 'NGCP Red Alert MLD Event 1',
+    type: 'emergency'
+  },
+  {
+    city: 'Taguig', barangay: 'Lower Bicutan, Maharlika Vill, Signal Village, Upper Bicutan, Western Bicutan',
+    street: 'Multiple streets',
+    date: 'May 14', time: '1:01 PM - 3:00 PM',
+    reason: 'NGCP Red Alert MLD Event 1',
+    type: 'emergency'
+  },
+  {
+    city: 'Valenzuela', barangay: 'Bignay',
+    street: 'Multiple streets',
+    date: 'May 14', time: '1:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Events 1 & 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Paranaque', barangay: 'BF Homes, San Martin de Porres, San Dionisio, Tambo',
+    street: 'Multiple streets',
+    date: 'May 14', time: '1:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Events 1 & 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Makati', barangay: 'Comembo, East Rembo, Pembo, Rizal, West Rembo',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Manila', barangay: 'Sampaloc, Santa Ana, Santa Mesa, Tondo',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Mandaluyong', barangay: 'Bagong Silang, Burol, Daang Bakal, Hagdang Bato Itaas/Libis, Harapin ang Bukas, New Zaniga, Pag-asa, Poblacion',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'San Juan', barangay: 'Batis, Kabayaran, Progreso, San Perfecto',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Caloocan', barangay: 'Bagumbong, Deparo, Kabatuan, Kaybiga, Llano',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Navotas', barangay: 'San Rafael Village',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Pateros', barangay: 'Martires del 96, Santa Ana, Santo Rosario-Kanluran',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Las Pinas', barangay: 'Almanza I, Daniel Fajardo, Elias Aldana, Ilaya, Las Piñas City Proper, Manuyo I, Pamplona I, Pulanglupa I & II, Talon I, Zapote',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  {
+    city: 'Muntinlupa', barangay: 'No scheduled MLD this event window',
+    street: '—', date: 'May 14', time: '—',
+    reason: 'No Muntinlupa circuits listed in today\'s MLD schedule. Check Meralco advisory for updates.',
+    type: 'clear'
+  },
+  {
+    city: 'Malabon', barangay: 'No scheduled MLD this event window',
+    street: '—', date: 'May 14', time: '—',
+    reason: 'No Malabon circuits listed in today\'s MLD schedule.',
+    type: 'clear'
+  },
+  {
+    city: 'Marikina', barangay: 'Santo Niño',
+    street: 'Multiple streets',
+    date: 'May 14', time: '3:01 PM - 5:00 PM',
+    reason: 'NGCP Red Alert MLD Event 3',
+    type: 'emergency'
+  },
+  // ── PAMPANGA ──
+  {
+    city: 'Pampanga', barangay: 'Parts of Pampanga (PELCO III areas)',
+    street: 'McArthur Highway corridor, San Fernando, Angeles, Mabalacat',
+    date: 'May 14', time: '4:01 PM - 10:00 PM',
+    reason: 'NGCP Red Alert MLD — PELCO III included in Luzon Grid rotational brownouts (power distributor: PELCO I/II/III)',
+    type: 'emergency'
+  },
+  {
+    city: 'Pampanga', barangay: 'Brgy. Lourdes Sur, Del Pilar, Sindalan',
+    street: 'McArthur Highway, San Fernando',
+    date: 'May 15', time: '8:00 AM - 3:00 PM',
+    reason: 'PELCO III scheduled line maintenance — transformer replacement works',
+    type: 'maintenance'
+  },
 ];
-
 const POWER_CITIES = ['All'];
 INTERRUPTIONS.forEach(function(i){ if(!POWER_CITIES.includes(i.city)) POWER_CITIES.push(i.city); });
 // Ensure all 17 NCR cities always appear
@@ -1403,10 +1519,10 @@ function buildGridAlert() {
   box.style.borderColor = red.border;
   var title = document.getElementById('grid-alert-title');
   title.style.color = red.color;
-  title.textContent = 'Luzon Grid under Red Alert - supply insufficient, rotating brownouts expected';
+  title.textContent = 'Luzon Grid — Red Alert · 6 MLD events today (May 14, 2026)';
   var sub = document.getElementById('grid-alert-sub');
   sub.style.color = red.color;
-  sub.textContent = 'NGCP advisory - Today May 14, 2026 - 920,000+ Meralco customers affected yesterday';
+  sub.textContent = 'NGCP advisory · May 14, 2026 · 6 MLD windows · NCR + Cavite, Laguna, Bulacan, Rizal, Batangas';
   var timesDiv = document.getElementById('grid-alert-times');
   yel.times.forEach(function(t){
     var chip = document.createElement('span');
