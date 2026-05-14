@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PH Fuel Price Tracker</title>
+<title>PH Watch — Fuel & Power Updates</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -292,6 +292,18 @@
   #ai-input:focus { border-color: rgba(0,0,0,0.25); box-shadow: 0 0 0 3px rgba(26,25,23,0.06); }
   #ai-send-btn:hover { opacity: .85; }
   #ai-send-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* Main tabs */
+  .main-tab {
+    background: none; border: none; border-bottom: 2.5px solid transparent;
+    padding: 10px 18px 10px; font-family: inherit; font-size: 14px; font-weight: 500;
+    cursor: pointer; color: var(--text3); display: flex; align-items: center; gap: 7px;
+    transition: color .15s; margin-bottom: -1.5px;
+  }
+  .main-tab:hover { color: var(--text2); }
+  .main-tab.on { color: var(--text); border-bottom-color: var(--text); }
+  .main-tab svg { opacity: .6; }
+  .main-tab.on svg { opacity: 1; }
 </style>
 </head>
 <body>
@@ -304,8 +316,8 @@
         <svg viewBox="0 0 24 24"><path d="M3 10h18M7 15h2m4 0h2M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
       </div>
       <div>
-        <div class="app-title">PH Fuel Price Tracker</div>
-        <div class="app-sub">Metro Manila · DOE Oil Monitor</div>
+        <div class="app-title">PH Watch</div>
+        <div class="app-sub">Fuel &amp; Power Updates · Metro Manila · NCR</div>
       </div>
     </div>
     <div class="topbar-right">
@@ -317,7 +329,22 @@
     </div>
   </div>
 
-  <!-- DOE Announcement -->
+  <!-- Main tab nav -->
+  <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1.5px solid rgba(0,0,0,0.08);">
+    <button class="main-tab on" id="tab-fuel" onclick="switchTab('fuel')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18M7 15h2m4 0h2M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      Fuel Prices
+    </button>
+    <button class="main-tab" id="tab-power" onclick="switchTab('power')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Power Interruptions
+      <span id="power-badge" style="background:#fdeaea;color:#b83232;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;">Red Alert</span>
+    </button>
+  </div>
+
+  <!-- Fuel tab panel -->
+  <div id="panel-fuel">
+<!-- DOE Announcement -->
   <div class="ann-banner">
     <div class="ann-head">
       <div class="ann-dot"></div>
@@ -688,8 +715,11 @@
       <div class="adv-body" id="adv-body">Diesel dropped ₱9.57/L this Tuesday (May 12) — one of the largest single-week rollbacks of 2026. Fill your diesel tank today. The next DOE announcement comes Monday May 18 evening; if another rollback is signaled, great — if not, you already locked in this week's low.</div>
     </div>
   </div>
+  </div>
 
-  <!-- AI Fuel Assistant -->
+  <!-- AI chat shown in fuel tab -->
+  <div id="panel-fuel-ai">
+<!-- AI Fuel Assistant -->
   <div class="panel" style="margin-bottom:12px;" id="ai-panel">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
       <div class="panel-title" style="margin:0;">AI fuel assistant</div>
@@ -718,8 +748,47 @@
     </div>
     <p style="font-size:11px;color:#9e9d97;margin-top:7px;">Press Enter to send · Shift+Enter for new line</p>
   </div>
+  </div>
 
-  <!-- External links -->
+  <!-- Power tab panel -->
+  <div id="panel-power" style="display:none;">
+<!-- Power Interruption Tracker -->
+  <div style="margin-bottom:12px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <div style="width:3px;height:22px;background:#1a1917;border-radius:2px;"></div>
+      <h2 style="font-size:16px;font-weight:600;margin:0;letter-spacing:-0.3px;">Metro Manila power interruptions</h2>
+      <span style="font-size:11px;color:#9e9d97;margin-left:auto;">Meralco · May 2026</span>
+    </div>
+
+    <!-- NGCP Grid Alert Banner -->
+    <div id="grid-alert-box" style="border-radius:12px;padding:14px 16px;margin-bottom:10px;border:1px solid;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <div id="grid-alert-icon" style="font-size:22px;flex-shrink:0;">🔴</div>
+        <div style="flex:1;">
+          <div id="grid-alert-title" style="font-size:14px;font-weight:600;"></div>
+          <div id="grid-alert-sub" style="font-size:12px;margin-top:1px;"></div>
+        </div>
+        <a href="https://www.ngcp.ph" target="_blank" rel="noopener"
+          style="font-size:11px;color:#1a4fa0;text-decoration:none;flex-shrink:0;">NGCP ↗</a>
+      </div>
+      <div id="grid-alert-times" style="display:flex;flex-wrap:wrap;gap:7px;"></div>
+    </div>
+
+    <!-- City filter tabs -->
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;" id="city-tabs">
+    </div>
+
+    <!-- Interruption list -->
+    <div id="interruption-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+
+    <p style="font-size:10px;color:#9e9d97;margin-top:10px;text-align:right;">
+      Source: Meralco official advisories &amp; NGCP alerts · Updated weekly (Sundays) &amp; during Red/Yellow Alert events ·
+      <a href="https://company.meralco.com.ph/news-and-advisories/maintenance-schedule" target="_blank" rel="noopener" style="color:#9e9d97;">Meralco.com.ph ↗</a>
+    </p>
+  </div>
+  </div>
+
+<!-- External links -->
   <div class="links-row">
     <a class="link-btn" href="https://www.doe.gov.ph" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24"><path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
@@ -743,7 +812,7 @@
     </a>
   </div>
 
-  <div class="footer">
+<div class="footer">
     <p>Data sourced from DOE Oil Monitor weekly advisories · NCR (Metro Manila) prices · Updated every Tuesday 6:00 AM</p>
     <p style="margin-top:4px;">Prices vary ±₱1–2 by city and station · Always verify with official sources before filling up</p>
   </div>
@@ -1113,6 +1182,139 @@ async function sendAI() {
 
   btn.disabled = false;
   document.getElementById('ai-messages').scrollTop = 999999;
+}
+
+
+/* Power Interruption Tracker */
+const GRID_ALERTS = [
+  { level:'red',    times:['4:01 PM - 10:00 PM'],
+    color:'#b83232', bg:'#fdeaea', border:'rgba(184,50,50,.2)' },
+  { level:'yellow', times:['3:01 PM - 4:00 PM','10:01 PM - 11:00 PM'],
+    color:'#8a5a00', bg:'#fef3dc', border:'rgba(138,90,0,.15)' },
+];
+
+const INTERRUPTIONS = [
+  { city:'Pasig', barangay:'Multiple barangays', street:'Rotating brownout areas',
+    date:'May 14', time:'4:01 PM - 10:00 PM', reason:'NGCP Red Alert - scheduled rotating brownouts (today)', type:'emergency' },
+  { city:'Metro Manila', barangay:'Parts of Metro Manila', street:'Rotating brownouts',
+    date:'May 13', time:'3:23 PM - 8:00 PM', reason:'NGCP Red Alert emergency manual load dropping (MLD) - 920,000+ customers affected', type:'emergency' },
+  { city:'Quezon City', barangay:'Brgy. Mariana', street:'E. Rodriguez Sr. Ave. (Sta. Ignacia to Broadway)',
+    date:'May 15', time:'12:01 AM - 5:00 AM', reason:'Replacement and reconstruction of electricity facilities', type:'maintenance' },
+  { city:'Caloocan', barangay:'Brgy. Barrio', street:'Milagrosa St.',
+    date:'May 12-13', time:'11:00 PM - 5:00 AM', reason:'Line reconductoring and replacement of electricity poles', type:'maintenance' },
+  { city:'Manila', barangay:'Sampaloc', street:'Near Pina Ave.',
+    date:'May 6', time:'8:30 AM - 1:30 PM', reason:'Line conversion works', type:'maintenance' },
+  { city:'Makati', barangay:'Brgy. San Lorenzo', street:'Legaspi Village',
+    date:'May 5', time:'12:01 AM - 5:00 AM', reason:'Line maintenance works', type:'maintenance' },
+  { city:'Valenzuela', barangay:'Brgy. Ugong', street:'Mindanao Ave.',
+    date:'May 4', time:'10:00 AM - 3:00 PM', reason:'Line reconstruction works', type:'maintenance' },
+  { city:'Taguig', barangay:'Katuparan, Ugong, Pinagsama, North Signal Village', street:'Multiple streets',
+    date:'May 6-8', time:'Various hours', reason:'Line reconstruction works', type:'maintenance' },
+  { city:'Marikina', barangay:'No scheduled interruptions this week', street:'No active advisories',
+    date:'May 12-18', time:'—', reason:'No Meralco maintenance advisory issued for Marikina this week. Check back Sunday for next week\'s schedule.', type:'clear' },
+];
+
+const POWER_CITIES = ['All'];
+INTERRUPTIONS.forEach(function(i){ if(!POWER_CITIES.includes(i.city)) POWER_CITIES.push(i.city); });
+// Ensure all 17 NCR cities always appear
+['Pasay','Muntinlupa','Malabon','Navotas','Las Pinas','Paranaque','Mandaluyong','San Juan','Pateros'].forEach(function(c){ if(!POWER_CITIES.includes(c)) POWER_CITIES.push(c); });
+var activePowerCity = 'All';
+
+function buildGridAlert() {
+  var box = document.getElementById('grid-alert-box');
+  if (!box) return;
+  var red = GRID_ALERTS.filter(function(a){return a.level==='red';})[0];
+  var yel = GRID_ALERTS.filter(function(a){return a.level==='yellow';})[0];
+  box.style.background = red.bg;
+  box.style.borderColor = red.border;
+  var title = document.getElementById('grid-alert-title');
+  title.style.color = red.color;
+  title.textContent = 'Luzon Grid under Red Alert - supply insufficient, rotating brownouts expected';
+  var sub = document.getElementById('grid-alert-sub');
+  sub.style.color = red.color;
+  sub.textContent = 'NGCP advisory - Today May 14, 2026 - 920,000+ Meralco customers affected yesterday';
+  var timesDiv = document.getElementById('grid-alert-times');
+  yel.times.forEach(function(t){
+    var chip = document.createElement('span');
+    chip.style.cssText = 'font-size:12px;font-weight:500;padding:3px 10px;border-radius:20px;background:#fef3dc;color:#8a5a00;';
+    chip.textContent = 'Yellow: ' + t;
+    timesDiv.appendChild(chip);
+  });
+  red.times.forEach(function(t){
+    var chip = document.createElement('span');
+    chip.style.cssText = 'font-size:12px;font-weight:500;padding:3px 10px;border-radius:20px;background:#fdeaea;color:#b83232;';
+    chip.textContent = 'Red: ' + t;
+    timesDiv.appendChild(chip);
+  });
+}
+
+function buildCityTabs() {
+  var container = document.getElementById('city-tabs');
+  if (!container) return;
+  container.innerHTML = '';
+  POWER_CITIES.forEach(function(city){
+    var btn = document.createElement('button');
+    btn.textContent = city;
+    var active = city === activePowerCity;
+    btn.style.cssText = 'background:' + (active ? '#1a1917' : 'none') + ';border:1px solid ' + (active ? '#1a1917' : 'rgba(0,0,0,0.08)') + ';border-radius:20px;padding:4px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:' + (active ? '#fff' : '#6b6a65') + ';transition:all .15s;';
+    btn.onclick = function(){ activePowerCity = city; buildCityTabs(); buildInterruptionList(); };
+    container.appendChild(btn);
+  });
+}
+
+function buildInterruptionList() {
+  var container = document.getElementById('interruption-list');
+  if (!container) return;
+  container.innerHTML = '';
+  var filtered = activePowerCity === 'All' ? INTERRUPTIONS : INTERRUPTIONS.filter(function(i){ return i.city === activePowerCity; });
+  if (filtered.length === 0) {
+    container.innerHTML = '<div style="font-size:13px;color:#9e9d97;padding:16px;text-align:center;background:#f0efe9;border-radius:10px;">No scheduled interruptions for this area this week.</div>';
+    return;
+  }
+  filtered.forEach(function(item){
+    var isE = item.type === 'emergency';
+    var isClear = item.type === 'clear';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border:1px solid ' + (isE ? 'rgba(184,50,50,.25)' : isClear ? 'rgba(26,168,104,.2)' : 'rgba(0,0,0,0.08)') + ';border-radius:10px;padding:12px 14px;';
+    var icon = isE ? '&#9889;' : isClear ? '&#10003;' : '&#128296;';
+    var tagBg = isE ? '#fdeaea' : isClear ? '#e6f5ed' : '#f0efe9';
+    var tagColor = isE ? '#b83232' : isClear ? '#1a7a52' : '#6b6a65';
+    var tagText = isE ? 'EMERGENCY' : isClear ? 'ALL CLEAR' : 'MAINTENANCE';
+    card.innerHTML = '<div style="display:flex;align-items:flex-start;gap:12px;">'
+      + '<div style="width:34px;height:34px;border-radius:8px;background:' + tagBg + ';display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">' + icon + '</div>'
+      + '<div style="flex:1;min-width:0;">'
+      + '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:4px;">'
+      + '<span style="font-size:13px;font-weight:600;">' + item.city + '</span>'
+      + '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + tagBg + ';color:' + tagColor + ';">' + tagText + '</span>'
+      + '<span style="font-size:11px;color:#9e9d97;margin-left:auto;">' + item.date + '</span>'
+      + '</div>'
+      + '<div style="font-size:12px;color:#6b6a65;margin-bottom:3px;">' + item.barangay + ' &middot; ' + item.street + '</div>'
+      + '<div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;">'
+      + '<span style="font-size:12px;font-weight:500;color:#1a1917;">&#9200; ' + item.time + '</span>'
+      + '<span style="font-size:11px;color:#9e9d97;">' + item.reason + '</span>'
+      + '</div>'
+      + '</div></div>';
+    container.appendChild(card);
+  });
+}
+
+function initPower() {
+  buildGridAlert();
+  buildCityTabs();
+  buildInterruptionList();
+}
+
+initPower();
+
+
+/* Tab switching */
+function switchTab(tab) {
+  document.getElementById('panel-fuel').style.display    = tab === 'fuel'  ? '' : 'none';
+  document.getElementById('panel-fuel-ai').style.display = tab === 'fuel'  ? '' : 'none';
+  document.getElementById('panel-power').style.display   = tab === 'power' ? '' : 'none';
+  document.getElementById('tab-fuel').className  = 'main-tab' + (tab === 'fuel'  ? ' on' : '');
+  document.getElementById('tab-power').className = 'main-tab' + (tab === 'power' ? ' on' : '');
+  if (tab === 'power') initPower();
 }
 
 </script>
