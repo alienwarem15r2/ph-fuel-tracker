@@ -388,9 +388,19 @@
 
   <!-- City-by-city fuel prices -->
   <div class="panel" style="margin-bottom:12px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <div class="panel-title" style="margin:0;">Prices by city — NCR &amp; Pampanga</div>
-      <div style="display:flex;gap:6px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div class="panel-title" style="margin:0;">Prices by city</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <div style="position:relative;">
+          <select id="region-select" onchange="switchRegion(this.value)"
+            style="appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 28px 4px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:var(--text2);font-weight:500;">
+            <option value="ncr">📍 Metro Manila (NCR)</option>
+            <option value="pampanga">📍 Pampanga</option>
+            <option value="all">🗺 All Regions</option>
+          </select>
+          <svg style="position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;width:11px;height:11px;stroke:var(--text3);fill:none;stroke-width:2;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div style="width:1px;height:20px;background:var(--border);"></div>
         <button class="ftab on" id="city-fuel-r91" onclick="switchCityFuel('r91',this)">RON 91</button>
         <button class="ftab" id="city-fuel-r95" onclick="switchCityFuel('r95',this)">RON 95</button>
         <button class="ftab" id="city-fuel-dsl" onclick="switchCityFuel('dsl',this)">Diesel</button>
@@ -794,6 +804,17 @@
     </div>
 
     <!-- City filter tabs -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <div style="position:relative;">
+        <select id="power-region-select" onchange="switchPowerRegion(this.value)"
+          style="appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 28px 4px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:var(--text2);font-weight:500;">
+          <option value="ncr">📍 Metro Manila (NCR)</option>
+          <option value="pampanga">📍 Pampanga</option>
+          <option value="all">🗺 All Regions</option>
+        </select>
+        <svg style="position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;width:11px;height:11px;stroke:var(--text3);fill:none;stroke-width:2;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
     <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;" id="city-tabs">
     </div>
 
@@ -1278,7 +1299,13 @@ function buildCityTabs() {
   var container = document.getElementById('city-tabs');
   if (!container) return;
   container.innerHTML = '';
-  POWER_CITIES.forEach(function(city){
+  var filteredPowerCities = POWER_CITIES.filter(function(c) {
+    if (c === 'All') return true;
+    if (activePowerRegion === 'ncr') return NCR_CITIES_LIST.indexOf(c) !== -1 || c === 'Metro Manila';
+    if (activePowerRegion === 'pampanga') return c === 'Pampanga';
+    return true; // 'all'
+  });
+  filteredPowerCities.forEach(function(city){
     var btn = document.createElement('button');
     btn.textContent = city;
     var active = city === activePowerCity;
@@ -1292,7 +1319,12 @@ function buildInterruptionList() {
   var container = document.getElementById('interruption-list');
   if (!container) return;
   container.innerHTML = '';
-  var filtered = activePowerCity === 'All' ? INTERRUPTIONS : INTERRUPTIONS.filter(function(i){ return i.city === activePowerCity; });
+  var regionFiltered = INTERRUPTIONS.filter(function(i) {
+    if (activePowerRegion === 'ncr') return NCR_CITIES_LIST.indexOf(i.city) !== -1 || i.city === 'Metro Manila' || i.city === 'Pasig';
+    if (activePowerRegion === 'pampanga') return i.city === 'Pampanga';
+    return true;
+  });
+  var filtered = activePowerCity === 'All' ? regionFiltered : regionFiltered.filter(function(i){ return i.city === activePowerCity; });
   if (filtered.length === 0) {
     container.innerHTML = '<div style="font-size:13px;color:#9e9d97;padding:16px;text-align:center;background:#f0efe9;border-radius:10px;">No scheduled interruptions for this area this week.</div>';
     return;
@@ -1344,6 +1376,25 @@ function switchTab(tab) {
 }
 
 
+
+/* Region filtering for city prices */
+var NCR_CITIES_LIST = ['Quezon City', 'Pasig', 'Manila', 'Makati', 'Caloocan', 'Taguig', 'Marikina', 'Mandaluyong', 'San Juan', 'Paranaque', 'Las Pinas', 'Muntinlupa', 'Valenzuela', 'Malabon', 'Navotas', 'Pasay', 'Pateros'];
+var PAMPANGA_CITIES_LIST = ['San Fernando', 'Angeles City', 'Mabalacat', 'Clark (CSEZ)'];
+var activeRegion = 'ncr';
+var activePowerRegion = 'ncr';
+
+function switchRegion(region) {
+  activeRegion = region;
+  buildCityPriceGrid();
+}
+
+function switchPowerRegion(region) {
+  activePowerRegion = region;
+  activePowerCity = 'All';
+  buildCityTabs();
+  buildInterruptionList();
+}
+
 /* City-by-City Fuel Prices */
 var CITY_PRICES = {
   'Quezon City':   { r91: { avg: 84.82, lo: 81.73, hi: 87.35, cheapest: 'Flying V' },  r95: { avg: 87.92, lo: 84.83, hi: 90.45, cheapest: 'Flying V' },  dsl: { avg: 76.29, lo: 73.15, hi: 83.79, cheapest: 'Flying V' } },
@@ -1386,7 +1437,13 @@ function buildCityPriceGrid() {
   if (!grid) return;
   grid.innerHTML = '';
   var avg = NCR_AVG[activeCityFuel];
-  var cities = Object.keys(CITY_PRICES);
+  var allCities = Object.keys(CITY_PRICES);
+  // Filter by region
+  var cities = allCities.filter(function(c) {
+    if (activeRegion === 'ncr') return NCR_CITIES_LIST.indexOf(c) !== -1;
+    if (activeRegion === 'pampanga') return PAMPANGA_CITIES_LIST.indexOf(c) !== -1;
+    return true; // 'all'
+  });
   // Sort by average price ascending
   cities.sort(function(a,b){ return CITY_PRICES[a][activeCityFuel].avg - CITY_PRICES[b][activeCityFuel].avg; });
 
