@@ -648,35 +648,39 @@ function applyLiveFuelData(d) {
   }
 
   // 2. DOE announcement banner
-  if (d.doe_adjustment) {
+   if (d.doe_adjustment) {
     var adj = d.doe_adjustment;
-    document.getElementById('doe-banner-title').textContent =
-      'DOE announcement — effective ' + (d.effective_date || 'this week');
-    document.getElementById('doe-banner-date').textContent =
-      adj.note || '';
+    // GUARD: if adj is null, skip
+    if (!adj) {
+      document.getElementById('doe-pills').innerHTML = '<span class="pill neutral">No adjustment data</span>';
+    } else {
+      document.getElementById('doe-banner-title').textContent =
+        'DOE announcement — effective ' + (d.effective_date || 'this week');
+      document.getElementById('doe-banner-date').textContent = adj.note || '';
 
-    var pills = '';
-    if (adj.gasoline_ron91_95) {
-      var gDir = adj.gasoline_ron91_95.startsWith('+') ? 'up' : 'down';
-      var gSym = gDir === 'up' ? '▲' : '▼';
-      pills += '<span class="pill ' + gDir + '">' + gSym + ' Gasoline ' + adj.gasoline_ron91_95 + '/L</span>';
+      var pills = '';
+      if (adj.gasoline_ron91_95) {
+        var gDir = String(adj.gasoline_ron91_95).startsWith('+') ? 'up' : 'down';
+        var gSym = gDir === 'up' ? '▲' : '▼';
+        pills += '<span class="pill ' + gDir + '">' + gSym + ' Gasoline ' + adj.gasoline_ron91_95 + '/L</span>';
+      }
+      if (adj.diesel_std) {
+        var dDir = String(adj.diesel_std).startsWith('+') ? 'up' : 'down';
+        var dSym = dDir === 'up' ? '▲' : '▼';
+        pills += '<span class="pill ' + dDir + '">' + dSym + ' Diesel ' + adj.diesel_std + '/L</span>';
+      }
+      if (adj.kerosene) {
+        var kDir = String(adj.kerosene).startsWith('+') ? 'up' : 'down';
+        var kSym = kDir === 'up' ? '▲' : '▼';
+        pills += '<span class="pill ' + kDir + '">' + kSym + ' Kerosene ' + adj.kerosene + '/L</span>';
+      }
+      if (adj.lpg_per_kg) {
+        var lDir = String(adj.lpg_per_kg).startsWith('+') ? 'up' : 'down';
+        var lSym = lDir === 'up' ? '▲' : '▼';
+        pills += '<span class="pill ' + lDir + '">' + lSym + ' LPG ' + adj.lpg_per_kg + '/kg</span>';
+      }
+      document.getElementById('doe-pills').innerHTML = pills || '<span class="pill neutral">No adjustment data</span>';
     }
-    if (adj.diesel_std) {
-      var dDir = adj.diesel_std.startsWith('+') ? 'up' : 'down';
-      var dSym = dDir === 'up' ? '▲' : '▼';
-      pills += '<span class="pill ' + dDir + '">' + dSym + ' Diesel ' + adj.diesel_std + '/L</span>';
-    }
-    if (adj.kerosene) {
-      var kDir = adj.kerosene.startsWith('+') ? 'up' : 'down';
-      var kSym = kDir === 'up' ? '▲' : '▼';
-      pills += '<span class="pill ' + kDir + '">' + kSym + ' Kerosene ' + adj.kerosene + '/L</span>';
-    }
-    if (adj.lpg_per_kg) {
-      var lDir = adj.lpg_per_kg.startsWith('+') ? 'up' : 'down';
-      var lSym = lDir === 'up' ? '▲' : '▼';
-      pills += '<span class="pill ' + lDir + '">' + lSym + ' LPG ' + adj.lpg_per_kg + '/kg</span>';
-    }
-    document.getElementById('doe-pills').innerHTML = pills || '<span class="pill neutral">' + (adj.note || 'Adjustment data not available from price board') + '</span>';
   }
 
   // 3. Summary cards
@@ -834,8 +838,11 @@ function buildBrandCards(d) {
    ══════════════════════════════════════════════════════════════ */
 function applyLivePowerData(d) {
   // Grid alert banner
-  if (d.grid_status) {
-    var gs = d.grid_status;
+    if (!d || !d.grid_status) {
+    console.warn('[PH Watch] Power data missing grid_status');
+    return;
+  }
+  var gs = d.grid_status;
     var box = document.getElementById('grid-alert-box');
     box.style.background = gs.bg || 'var(--surface)';
     box.style.borderColor = gs.border || 'var(--border)';
