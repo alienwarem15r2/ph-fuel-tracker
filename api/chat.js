@@ -51,6 +51,10 @@ export default async function handler(req, res) {
 
 /* ── DEBUG ── */
 async function handleDebug(res) {
+    // Temporary: list all env var keys (values hidden)
+  const allKeys = Object.keys(process.env).filter(k => 
+    k.includes('GROQ') || k.includes('GEMINI') || k.includes('API')
+  );
   const groq = process.env.GROQ_API_KEY;
   const gem = process.env.GEMINI_API_KEY;
   return res.status(200).json({
