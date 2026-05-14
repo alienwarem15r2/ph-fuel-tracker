@@ -141,7 +141,7 @@ async function handleFuel(res) {
     }
   }
 
-  // 2. Scrape fuelprice.ph (with 4s timeout so it can never hang)
+  // 2. Scrape fuelprice.ph
   if (!result) {
     try {
       const scraped = await scrapeFuelPrices();
@@ -170,20 +170,24 @@ async function handleFuel(res) {
     }
   }
 
-  // 2b. If scraper got prices but no adjustments, ask Gemini for just the adjustment
-if (result && geminiKey && !result.doe_adjustment?.gasoline_ron91_95) {
-  try {
-    const adjPrompt = `Today is ${today}. Search for the latest DOE Philippines weekly fuel price adjustment for this week only. Return ONLY compact JSON, no markdown: {"gasoline_ron91_95":"+0.00 or -0.00 or null","diesel_std":"+0.00 or -0.00 or null","kerosene":"+0.00 or -0.00 or null","lpg_per_kg":"+0.00 or -0.00 or null","note":"1 sentence context"}`;
-    const adjRaw = await geminiGenerate(geminiKey, adjPrompt);
-    const adjJson = extractJSON(adjRaw);
-    if (!adjJson.error && (adjJson.gasoline_ron91_95 || adjJson.diesel_std)) {
-      result.doe_adjustment = adjJson;
-      console.log("[fuel] Gemini adjustment OK:", adjJson.note);
+  // 2b. If we have scraped prices but no adjustments, ask Gemini for just the DOE adjustment
+  if (result && geminiKey && !result.doe_adjustment?.gasoline_ron91_95) {
+    try {
+      const adjPrompt = `Today is ${today}. Search for the latest DOE Philippines weekly fuel price adjustment effective this week only. Return ONLY compact JSON, no markdown: {"gasoline_ron91_95":"+0.00 or -0.00 or null","diesel_std":"+0.00 or -0.00 or null","kerosene":"+0.00 or -0.00 or null","lpg_per_kg":"+0.00 or -0.00 or null","note":"1 sentence context"}`;
+      const adjRaw = await geminiGenerate(geminiKey, adjPrompt);
+      const adjJson = extractJSON(adjRaw);
+      if (!adjJson.error && (adjJson.gasoline_ron91_95 || adjJson.diesel_std || adjJson.note)) {
+        result.doe_adjustment = adjJson;
+        // Also update the note to show both sources
+        if (!result.doe_adjustment.note) result.doe_adjustment.note = "Live adjustment via Gemini";
+        console.log("[fuel] Gemini adjustment OK:", adjJson.note || adjJson.gasoline_ron91_95);
+      }
+    } catch (e) {
+      console.warn("[fuel] Gemini adjustment failed:", e.message);
     }
-  } catch (e) {
-    console.warn("[fuel] Gemini adjustment failed:", e.message);
   }
-}
+
+
 
   // 3. Groq fallback
   if (!result) {
