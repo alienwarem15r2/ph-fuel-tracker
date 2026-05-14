@@ -170,6 +170,21 @@ async function handleFuel(res) {
     }
   }
 
+  // 2b. If scraper got prices but no adjustments, ask Gemini for just the adjustment
+if (result && geminiKey && !result.doe_adjustment?.gasoline_ron91_95) {
+  try {
+    const adjPrompt = `Today is ${today}. Search for the latest DOE Philippines weekly fuel price adjustment for this week only. Return ONLY compact JSON, no markdown: {"gasoline_ron91_95":"+0.00 or -0.00 or null","diesel_std":"+0.00 or -0.00 or null","kerosene":"+0.00 or -0.00 or null","lpg_per_kg":"+0.00 or -0.00 or null","note":"1 sentence context"}`;
+    const adjRaw = await geminiGenerate(geminiKey, adjPrompt);
+    const adjJson = extractJSON(adjRaw);
+    if (!adjJson.error && (adjJson.gasoline_ron91_95 || adjJson.diesel_std)) {
+      result.doe_adjustment = adjJson;
+      console.log("[fuel] Gemini adjustment OK:", adjJson.note);
+    }
+  } catch (e) {
+    console.warn("[fuel] Gemini adjustment failed:", e.message);
+  }
+}
+
   // 3. Groq fallback
   if (!result) {
     const groqKey = process.env.GROQ_API_KEY;
