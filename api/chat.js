@@ -105,30 +105,66 @@ async function handleChat(apiKey, system, messages, res) {
 async function handleFuel(apiKey, res) {
   const today = phDate();
 
-  const prompt =
+const prompt =
 `Today is ${today} (Philippine time).
 
-Search query: site:fuelprice.ph Petron Shell Unioil for:
-1. The most recent DOE (Department of Energy Philippines) weekly petroleum price monitoring report — find the LATEST effective date and adjustment amounts
-2. The ACTUAL CURRENT PUMP PRICES (not DOE SRP baselines) at Petron, Shell, and Unioil stations in Metro Manila NCR as of today
+Your task: Search the web for current Philippine fuel prices and return them as JSON.
 
-IMPORTANT PRICE SANITY CHECK: For Philippine pump prices, use the most recent data you can find.
+Step 1 — Search these specific sources and use ONLY data from May 11–15, 2026:
+• fuelprice.ph  (official pump price monitor)
+• gaswatchph.com (consumer price tracker)
+• DOE Oil Monitor (Department of Energy)
 
-Respond with ONLY a JSON object. No markdown fences. No explanation. Start with { and end with }.
+Step 2 — Find:
+1. The latest DOE weekly adjustment amounts (e.g., "+0.20" or "-0.10") for gasoline, diesel, kerosene, and LPG.
+2. The ACTUAL CURRENT PUMP PRICES at Petron, Shell, and Unioil in Metro Manila NCR.
+   - Do NOT use DOE SRP baseline prices.
+   - Do NOT use prices from news articles dated before May 11, 2026.
+   - If a source lists a range, use the mid-point or the NCR average.
+
+Step 3 — Sanity check: As of May 2026, real Philippine pump prices are roughly ₱80–₱95/L for RON 91 and ₱75–₱90/L for diesel. If your search returns prices outside ₱60–₱120, you have outdated data — search again or mark as unavailable.
+
+Step 4 — Respond with ONLY a JSON object. No markdown fences. No explanation text outside the JSON. Start with { and end with }.
+
+Use this exact structure. Replace every null with the real value. If a value is truly unavailable after searching, use null (not a guess).
 
 {
- "Visit and read fuelprice.ph and gaswatchph.com for the current week's official pump prices. Do not use old news articles or press releases. Return the exact prices shown on those sites for May 12, 2026.":
+  "effective_date": "May 15, 2026",
+  "week_label": "Week of May 12-18, 2026",
+  "doe_adjustment": {
+    "gasoline_ron91_95": "+0.00",
+    "diesel_std": "+0.00",
+    "kerosene": "+0.00",
+    "lpg_per_kg": "+0.00",
+    "note": "Brief context for this week's adjustment"
   },
   "prices": {
-  "petron": { "ron91": "SEARCH_RESULT", "ron95": "SEARCH_RESULT", ... },
-  "shell": { "ron91": "SEARCH_RESULT", "ron95": "SEARCH_RESULT", ... },
-  "unioil":  { "ron91": "SEARCH_RESULT", "ron95": "SEARCH_RESULT", ... }
-}
+    "petron": {
+      "ron91": null,
+      "ron95": null,
+      "ron100": null,
+      "diesel_std": null,
+      "diesel_prem": null,
+      "kerosene": null
+    },
+    "shell": {
+      "ron91": null,
+      "ron95": null,
+      "ron97": null,
+      "diesel_std": null,
+      "diesel_prem": null,
+      "kerosene": null
+    },
+    "unioil": {
+      "ron91": null,
+      "ron95": null,
+      "diesel_std": null
+    }
   },
-  "trend_context": "1-2 sentences on recent price trend",
-  "next_week_signal": "Brief note on what to expect next Tuesday",
+  "trend_context": "1-2 sentences on recent trend",
+  "next_week_signal": "Brief note on next Tuesday expectation",
   "fill_up_advice": "Practical 1-2 sentence advice for Filipino motorists",
-  "sources": ["url1", "url2"]
+  "sources": ["https://fuelprice.ph", "https://gaswatchph.com"]
 }`;
 
   const raw = await searchCompletion(apiKey, prompt);
@@ -140,20 +176,22 @@ Respond with ONLY a JSON object. No markdown fences. No explanation. Start with 
   }
 
   // ── Sanity check: reject obviously wrong prices ──
-  // Philippine pump prices 2025-2026 are roughly ₱60-₱95/L for regular grades.
-  // If the model hallucinated prices outside this window, reject rather than serve bad data.
   const r91 = json.prices?.petron?.ron91;
-  if (r91 !== undefined) {
-    if (r91 < 55 || r91 > 130) {
-      console.error(`[chat.js] Fuel sanity FAIL: petron ron91=${r91} is out of realistic range ₱55-₱130. Rejecting.`);
+  if (r91 !== undefined && r91 !== null) {
+    // May 2026 realistic range after the Iran spike and subsequent rollback
+    if (r91 < 75 || r91 > 115) {
+      console.error(`[chat.js] Fuel sanity FAIL: petron ron91=${r91} is out of realistic range ₱75-₱115. Rejecting.`);
       return res.status(500).json({
-        error: `Sanity check failed: Petron RON 91 = ₱${r91} is outside the realistic range ₱55–₱130. ` +
-               "The model may have returned outdated or hallucinated data. Raw data returned to client as debug_raw.",
+        error: `Sanity check failed: Petron RON 91 = ₱${r91} is outside the realistic range ₱75–₱115. ` +
+               "The model may have returned outdated or hallucinated data.",
         debug_raw: JSON.stringify(json).slice(0, 500)
       });
     }
     console.log("[chat.js] Fuel OK:", json.effective_date, "petron ron91: ₱" + r91);
   }
+
+  return res.status(200).json(json);
+}
 
   return res.status(200).json(json);
 }
