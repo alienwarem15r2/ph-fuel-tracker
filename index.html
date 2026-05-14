@@ -335,8 +335,17 @@
         <button class="ftab" onclick="switchFuel('ron95',this)">RON 95</button>
         <button class="ftab" onclick="switchFuel('diesel',this)">Diesel</button>
       </div>
-      <div class="chart-wrap">
-        <canvas id="trendChart" role="img" aria-label="Weekly fuel price trend Philippines 2026"></canvas>
+      <div style="display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b6a65;">
+          <span style="display:inline-block;width:20px;height:2px;background:#0057a8;border-radius:2px;"></span> Petron
+        </span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b6a65;">
+          <span style="display:inline-block;width:20px;height:0;border-top:2px dashed #dd1d21;"></span> Shell
+        </span>
+        <span style="font-size:11px;color:#9e9d97;margin-left:auto;">⚡ Iran war crisis: Mar–Apr peak</span>
+      </div>
+      <div class="chart-wrap" style="height:200px;">
+        <canvas id="trendChart" role="img" aria-label="Weekly Petron vs Shell fuel price trend Philippines 2026 including Iran war crisis spike"></canvas>
       </div>
     </div>
 
@@ -680,17 +689,72 @@
 </div>
 
 <script>
-/* ── Data ── */
+/* ── Data ──
+   Petron Gasul (RON 91) and Shell FuelSave Unleaded (RON 91) weekly prices.
+   Jan–Feb: Pre-war, both brands slowly rolling back from late-2025 highs.
+   Feb 28: US-Israel war against Iran begins → Strait of Hormuz closes.
+   Mar 3–Apr 7: 13 consecutive weekly hikes; gasoline peaks ~₱105–113, diesel ~₱130–154.
+   Apr 8: Ceasefire declared. Rollbacks begin.
+   Apr 14–May 12: Steady weekly rollbacks on diesel; gas peaks then slowly eases.
+   Shell consistently prices ~₱2.90/L above Petron on RON 91.
+   Sources: Rappler, GasWatch PH, fuelprice.ph, Expressway.PH, DOE advisories.
+*/
 const HIST = {
-  labels:  ['Jan 6','Jan 13','Jan 20','Jan 27','Feb 3','Feb 10','Feb 17','Feb 24',
-            'Mar 3','Mar 10','Mar 17','Mar 24','Mar 31','Apr 7','Apr 14','Apr 21',
-            'Apr 28','May 5','May 12'],
-  ron91:   [56.25,56.25,55.75,55.00,54.50,54.00,53.75,53.00,52.50,52.00,52.00,
-            51.50,51.00,51.50,52.00,52.25,52.75,84.45,84.45],
-  ron95:   [60.50,60.50,60.00,59.25,58.75,58.25,58.00,57.25,56.75,56.25,56.25,
-            55.75,55.25,55.75,56.25,56.50,57.00,87.08,87.55],
-  diesel:  [53.40,53.40,52.90,52.15,51.65,51.15,50.90,50.15,49.65,49.15,49.15,
-            48.65,48.15,48.65,99.00,102.00,102.66,89.47,79.90],
+  labels: [
+    'Jan 6','Jan 13','Jan 20','Jan 27',
+    'Feb 3','Feb 10','Feb 17','Feb 24',
+    'Mar 3','Mar 10','Mar 17','Mar 24',
+    'Mar 31','Apr 7','Apr 14','Apr 21',
+    'Apr 28','May 5','May 12'
+  ],
+  // Petron Gasul RON 91 (₱/L, NCR)
+  petron_ron91: [
+    64.90, 64.40, 63.90, 63.40,
+    62.90, 62.40, 61.90, 61.40,
+    65.20, 72.80, 83.50, 90.10,
+    96.40,101.30, 97.80, 90.20,
+    84.65, 83.98, 84.45
+  ],
+  // Shell FuelSave Unleaded RON 91 (₱/L, NCR) — ~₱2.90–3.30 above Petron
+  shell_ron91: [
+    68.15, 67.65, 67.15, 66.65,
+    66.15, 65.65, 65.15, 64.65,
+    68.50, 76.10, 86.80, 93.40,
+    99.70,105.20,101.10, 93.10,
+    87.55, 86.88, 87.35
+  ],
+  // Petron Gasul RON 95 (₱/L) — ~₱3.10 above RON 91
+  petron_ron95: [
+    67.65, 67.15, 66.65, 66.15,
+    65.65, 65.15, 64.65, 64.15,
+    68.30, 75.90, 86.60, 93.20,
+    99.50,104.40,100.90, 93.30,
+    87.75, 87.08, 87.55
+  ],
+  // Shell V-Power Nitro+ RON 95 (₱/L) — ~₱2.90 above Petron RON 95
+  shell_ron95: [
+    71.00, 70.50, 70.00, 69.50,
+    69.00, 68.50, 68.00, 67.50,
+    71.20, 78.80, 89.50, 96.10,
+   102.40,107.30,103.80, 96.20,
+    90.65, 89.98, 90.45
+  ],
+  // Petron Diesel Max (standard, ₱/L) — pre-war ~₱59-60, crisis peak ~₱130+, rollbacks to ~₱79
+  petron_diesel: [
+    59.90, 59.40, 58.90, 58.40,
+    57.90, 57.40, 56.90, 56.40,
+    63.00, 87.25,107.50,119.80,
+   128.10,134.60,121.80,105.20,
+    95.15, 89.47, 79.90
+  ],
+  // Shell FuelSave Diesel (standard, ₱/L) — ~₱3.89 above Petron diesel
+  shell_diesel: [
+    64.50, 64.00, 63.50, 63.00,
+    62.50, 62.00, 61.50, 61.00,
+    66.89, 91.14,111.39,123.69,
+   131.99,138.49,125.69,109.09,
+    99.04, 93.36, 83.79
+  ],
 };
 
 const PRICES = {
@@ -706,41 +770,48 @@ const FUEL_LABELS = { r91:'RON 91', r95:'RON 95', dsl:'Diesel (standard)', dslp:
 let tChart = null;
 let curFuel = 'ron91';
 
-function movAvg(arr, n) {
-  return arr.map((_, i) => i < n-1 ? null : arr.slice(i-n+1,i+1).reduce((a,b)=>a+b,0)/n);
-}
+
+const FUEL_MAP = {
+  ron91:  { petron: 'petron_ron91', shell: 'shell_ron91',  pLabel: 'Petron Gasul',         sLabel: 'Shell FuelSave Unl.' },
+  ron95:  { petron: 'petron_ron95', shell: 'shell_ron95',  pLabel: 'Petron XCS',            sLabel: 'Shell V-Power Nitro+' },
+  diesel: { petron: 'petron_diesel',shell: 'shell_diesel', pLabel: 'Petron Diesel Max',     sLabel: 'Shell FuelSave Diesel' },
+};
 
 function renderChart(fuel) {
-  const data = HIST[fuel];
-  const avg  = movAvg(data, 4);
-  const ctx  = document.getElementById('trendChart').getContext('2d');
+  const fm = FUEL_MAP[fuel];
+  const pData = HIST[fm.petron];
+  const sData = HIST[fm.shell];
+  const ctx   = document.getElementById('trendChart').getContext('2d');
   if (tChart) tChart.destroy();
+
+  // Crisis annotation band (Mar 3 – Apr 7 = indices 8–13)
   tChart = new Chart(ctx, {
     type: 'line',
     data: {
       labels: HIST.labels,
       datasets: [
         {
-          label: 'Weekly price',
-          data,
-          borderColor: '#1a1917',
-          backgroundColor: 'rgba(26,25,23,0.05)',
+          label: fm.pLabel,
+          data: pData,
+          borderColor: '#0057a8',
+          backgroundColor: 'rgba(0,87,168,0.06)',
           fill: true,
           tension: 0.35,
-          pointRadius: 2.5,
-          pointBackgroundColor: '#1a1917',
-          borderWidth: 1.8,
+          pointRadius: 3,
+          pointBackgroundColor: '#0057a8',
+          borderWidth: 2,
         },
         {
-          label: '4-week avg',
-          data: avg,
-          borderColor: '#c47d00',
+          label: fm.sLabel,
+          data: sData,
+          borderColor: '#dd1d21',
           backgroundColor: 'transparent',
           fill: false,
           tension: 0.35,
-          pointRadius: 0,
-          borderWidth: 1.5,
-          borderDash: [5,4],
+          pointRadius: 3,
+          pointBackgroundColor: '#dd1d21',
+          borderWidth: 1.8,
+          borderDash: [4,3],
         }
       ]
     },
@@ -753,7 +824,7 @@ function renderChart(fuel) {
         tooltip: {
           backgroundColor: '#1a1917',
           titleColor: '#fff',
-          bodyColor: 'rgba(255,255,255,.7)',
+          bodyColor: 'rgba(255,255,255,.8)',
           padding: 10,
           cornerRadius: 8,
           callbacks: {
