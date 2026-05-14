@@ -17,7 +17,1127 @@
     --border: rgba(0,0,0,0.08);
     --border-strong: rgba(0,0,0,0.14);
     --text: #1a1917;
+    --text2: #6b6a65;<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PH Fuel Price Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.14);
+    --text: #1a1917;
     --text2: #6b6a65;
+    --text3: #9e9d97;
+    --green: #1a7a52;
+    --green-bg: #e6f5ed;
+    --green-mid: #2ea868;
+    --red: #b83232;
+    --red-bg: #fdeaea;
+    --amber: #8a5a00;
+    --amber-bg: #fef3dc;
+    --blue: #1a4fa0;
+    --blue-bg: #e8effe;
+    --petron: #0057a8;
+    --petron-bg: #e6f0fb;
+    --shell: #dd1d21;
+    --shell-bg: #fde8e8;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* ── Layout ── */
+  .app { max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  /* ── Top bar ── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+  .app-icon {
+    width: 38px; height: 38px; background: var(--text); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .app-icon svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .app-title { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+  .app-sub { font-size: 12px; color: var(--text3); margin-top: 1px; }
+  .topbar-right { display: flex; align-items: center; gap: 8px; }
+  #week-label {
+    font-size: 12px; color: var(--text2);
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 5px 10px; border-radius: 20px;
+  }
+  .refresh-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 12px; font-size: 12px;
+    font-family: inherit; cursor: pointer; color: var(--text2);
+    display: flex; align-items: center; gap: 5px; transition: background .15s;
+  }
+  .refresh-btn:hover { background: var(--surface2); }
+  .refresh-btn svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 2; fill: none; }
+
+  /* ── Announcement banner ── */
+  .ann-banner {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px;
+  }
+  .ann-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .ann-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green-mid); flex-shrink: 0; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .ann-title { font-size: 13px; font-weight: 500; }
+  .ann-date { font-size: 12px; color: var(--text3); margin-left: auto; }
+  .ann-pills { display: flex; flex-wrap: wrap; gap: 7px; }
+  .pill {
+    font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 20px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .pill.up { background: var(--red-bg); color: var(--red); }
+  .pill.down { background: var(--green-bg); color: var(--green); }
+  .pill.neutral { background: var(--surface2); color: var(--text2); }
+
+  /* ── Summary cards ── */
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    margin-bottom: 16px;
+  }
+  @media(max-width:640px){ .summary-grid { grid-template-columns: repeat(2,1fr); } }
+  .sum-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 15px;
+    transition: border-color .15s;
+  }
+  .sum-card:hover { border-color: var(--border-strong); }
+  .sum-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+  .sum-price { font-size: 26px; font-weight: 600; letter-spacing: -1px; font-family: 'DM Mono', monospace; }
+  .sum-change { font-size: 12px; font-weight: 500; margin-top: 4px; display: flex; align-items: center; gap: 3px; }
+  .sum-change.up { color: var(--red); }
+  .sum-change.down { color: var(--green); }
+  .sum-change.flat { color: var(--text3); }
+
+  /* ── Two-col layout ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media(max-width:640px){ .two-col { grid-template-columns: 1fr; } }
+
+  /* ── Panels ── */
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .panel-title {
+    font-size: 12px; font-weight: 600; color: var(--text2);
+    text-transform: uppercase; letter-spacing: .06em; margin-bottom: 14px;
+  }
+
+  /* ── Trend chart ── */
+  .fuel-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .ftab {
+    background: none; border: 1px solid var(--border); border-radius: 20px;
+    padding: 3px 11px; font-size: 12px; font-family: inherit; cursor: pointer;
+    color: var(--text2); transition: all .15s;
+  }
+  .ftab.on { background: var(--text); color: #fff; border-color: var(--text); }
+  .chart-wrap { position: relative; width: 100%; height: 180px; }
+
+  /* ── Brand cards ── */
+  .brand-card {
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    overflow: hidden; margin-bottom: 10px;
+  }
+  .brand-card:last-child { margin-bottom: 0; }
+  .brand-hdr {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand-badge {
+    font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; letter-spacing: .02em;
+  }
+  .brand-badge.petron { background: var(--petron-bg); color: var(--petron); }
+  .brand-badge.shell  { background: var(--shell-bg);  color: var(--shell); }
+  .brand-desc { font-size: 11px; color: var(--text3); }
+  .brand-products { padding: 0; }
+  .bp-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-bottom: 1px solid var(--border); gap: 8px;
+  }
+  .bp-row:last-child { border-bottom: none; }
+  .bp-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bp-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .bp-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bp-grade { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 4px; margin-top: 1px; }
+  .grade-tag {
+    font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 4px; letter-spacing: .02em;
+  }
+  .tag-std     { background: var(--surface2); color: var(--text2); }
+  .tag-prem    { background: var(--green-bg); color: var(--green); }
+  .tag-top     { background: var(--blue-bg); color: var(--blue); }
+  .bp-right { text-align: right; flex-shrink: 0; }
+  .bp-price { font-size: 14px; font-weight: 600; font-family: 'DM Mono', monospace; }
+  .bp-chg { font-size: 11px; font-weight: 500; margin-top: 1px; }
+  .bp-chg.up { color: var(--red); }
+  .bp-chg.down { color: var(--green); }
+
+  /* ── Head to head ── */
+  .h2h-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .h2h-table th {
+    text-align: center; font-weight: 500; color: var(--text3); font-size: 11px;
+    padding: 0 6px 8px; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .h2h-table th:first-child { text-align: left; }
+  .h2h-table td { padding: 7px 6px; border-top: 1px solid var(--border); text-align: center; }
+  .h2h-table td:first-child { text-align: left; font-size: 12px; color: var(--text2); }
+  .h2h-table tr:first-child td { border-top: none; }
+  .h2h-winner {
+    background: var(--green-bg); color: var(--green); font-weight: 600;
+    border-radius: 6px; padding: 3px 7px; display: inline-block;
+    font-family: 'DM Mono', monospace; font-size: 12px;
+  }
+  .h2h-loser { color: var(--text2); font-family: 'DM Mono', monospace; font-size: 12px; }
+  .h2h-save { font-size: 11px; font-weight: 600; color: var(--green); }
+
+  /* ── Calculator ── */
+  .calc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  @media(max-width:480px){ .calc-form { grid-template-columns: 1fr; } }
+  .cf-field label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 5px; font-weight: 500; }
+  .cf-field select, .cf-field input {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-family: inherit; font-size: 13px;
+    background: var(--surface); color: var(--text); appearance: none;
+    transition: border-color .15s;
+  }
+  .cf-field select:focus, .cf-field input:focus {
+    outline: none; border-color: var(--border-strong);
+  }
+  .calc-results { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 12px; }
+  @media(max-width:480px){ .calc-results { grid-template-columns: 1fr 1fr; } }
+  .cr-card { background: var(--surface2); border-radius: var(--radius-sm); padding: 10px 11px; }
+  .cr-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+  .cr-value { font-size: 16px; font-weight: 600; font-family: 'DM Mono', monospace; letter-spacing: -0.5px; }
+  .cr-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .cr-value.green { color: var(--green); }
+  .cr-value.red { color: var(--red); }
+
+  .winner-banner {
+    border-radius: var(--radius-sm); padding: 11px 13px;
+    display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5;
+  }
+  .winner-banner.good { background: var(--green-bg); color: var(--green); }
+  .winner-banner.warn { background: var(--amber-bg); color: var(--amber); }
+  .winner-banner.info { background: var(--surface2); color: var(--text2); }
+  .winner-banner svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; fill: currentColor; }
+
+  /* ── Advice box ── */
+  .advice-box {
+    border-radius: var(--radius); padding: 15px 16px;
+    display: flex; align-items: flex-start; gap: 12px;
+    margin-bottom: 12px; border: 1px solid transparent;
+  }
+  .advice-box.good { background: var(--green-bg); border-color: rgba(46,168,104,.2); }
+  .advice-box.warn { background: var(--red-bg); border-color: rgba(184,50,50,.15); }
+  .advice-box.info { background: var(--amber-bg); border-color: rgba(138,90,0,.15); }
+  .advice-box.neutral { background: var(--surface); border-color: var(--border); }
+  .adv-emoji { font-size: 22px; flex-shrink: 0; line-height: 1; margin-top: 1px; }
+  .adv-title { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+  .adv-body { font-size: 13px; opacity: .85; line-height: 1.5; }
+  .adv-box-good  .adv-title { color: var(--green); }
+  .adv-box-warn  .adv-title { color: var(--red); }
+  .adv-box-info  .adv-title { color: var(--amber); }
+
+  /* ── Links row ── */
+  .links-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .link-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 6px 13px; font-size: 12px;
+    font-family: inherit; cursor: pointer; color: var(--text2);
+    text-decoration: none; transition: background .15s, border-color .15s;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .link-btn:hover { background: var(--surface2); border-color: var(--border-strong); }
+  .link-btn svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 2; fill: none; }
+
+  /* ── Footer ── */
+  .footer { margin-top: 32px; font-size: 11px; color: var(--text3); text-align: center; line-height: 1.7; }
+  .footer a { color: var(--text2); text-decoration: underline; }
+
+  /* AI Chat */
+  .ai-chip {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 20px;
+    padding: 5px 12px; font-size: 12px; font-family: inherit; cursor: pointer;
+    color: var(--text2); transition: background .15s, border-color .15s; white-space: nowrap;
+  }
+  .ai-chip:hover { background: #e8effe; border-color: #b5d4f4; color: #1a4fa0; }
+  .ai-bubble {
+    max-width: 88%; padding: 10px 13px; border-radius: 12px; font-size: 13px;
+    line-height: 1.65; word-break: break-word;
+  }
+  .ai-bubble.user {
+    align-self: flex-end; background: #1a1917; color: #fff; border-bottom-right-radius: 4px;
+  }
+  .ai-bubble.assistant {
+    align-self: flex-start; background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border); border-bottom-left-radius: 4px;
+  }
+  .ai-bubble.typing {
+    align-self: flex-start; background: var(--surface2); color: var(--text3);
+    border: 1px solid var(--border); border-bottom-left-radius: 4px; font-style: italic; font-size: 12px;
+  }
+  .ai-bubble.error {
+    align-self: flex-start; background: #fdeaea; color: #b83232;
+    border: 1px solid rgba(184,50,50,.2); border-bottom-left-radius: 4px; font-size: 12px;
+  }
+  #ai-messages::-webkit-scrollbar { width: 4px; }
+  #ai-messages::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 4px; }
+  #ai-input:focus { border-color: rgba(0,0,0,0.25); box-shadow: 0 0 0 3px rgba(26,25,23,0.06); }
+  #ai-send-btn:hover { opacity: .85; }
+  #ai-send-btn:disabled { opacity: .45; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="app-icon">
+        <svg viewBox="0 0 24 24"><path d="M3 10h18M7 15h2m4 0h2M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </div>
+      <div>
+        <div class="app-title">PH Fuel Price Tracker</div>
+        <div class="app-sub">Metro Manila · DOE Oil Monitor</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="week-label">Week of May 12–18, 2026</span>
+      <button class="refresh-btn" onclick="init()">
+        <svg viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- DOE Announcement -->
+  <div class="ann-banner">
+    <div class="ann-head">
+      <div class="ann-dot"></div>
+      <span class="ann-title">DOE announcement — effective Tuesday May 12, 6:00 AM</span>
+      <span class="ann-date">Announced Mon May 11 · Confirmed by Petron, Shell, Seaoil, PTT, Unioil</span>
+    </div>
+    <div class="ann-pills">
+      <span class="pill up">▲ Gasoline +₱0.47/L</span>
+      <span class="pill down">▼ Diesel −₱9.57/L</span>
+      <span class="pill down">▼ Kerosene −₱13.30/L</span>
+      <span class="pill up">▲ LPG +₱1.22/kg (+₱13.42/11kg cyl.)</span>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="summary-grid">
+    <div class="sum-card">
+      <div class="sum-label">RON 91 (NCR avg)</div>
+      <div class="sum-price">₱84.45</div>
+      <div class="sum-change up">▲ +₱0.47 this week</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">RON 95 (NCR avg)</div>
+      <div class="sum-price">₱87.55</div>
+      <div class="sum-change up">▲ +₱0.47 this week</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">Diesel (NCR avg)</div>
+      <div class="sum-price">₱79.90</div>
+      <div class="sum-change down">▼ −₱9.57 this week</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">Kerosene (NCR avg)</div>
+      <div class="sum-price">₱79.20</div>
+      <div class="sum-change down">▼ −₱13.30 this week</div>
+    </div>
+  </div>
+
+  <!-- Trend + H2H -->
+  <div class="two-col">
+
+    <!-- Trend chart -->
+    <div class="panel">
+      <div class="panel-title">Weekly price trend</div>
+      <div class="fuel-tabs">
+        <button class="ftab on" onclick="switchFuel('ron91',this)">RON 91</button>
+        <button class="ftab" onclick="switchFuel('ron95',this)">RON 95</button>
+        <button class="ftab" onclick="switchFuel('diesel',this)">Diesel</button>
+      </div>
+      <div style="display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b6a65;">
+          <span style="display:inline-block;width:20px;height:2px;background:#0057a8;border-radius:2px;"></span> Petron
+        </span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b6a65;">
+          <span style="display:inline-block;width:20px;height:0;border-top:2px dashed #dd1d21;"></span> Shell
+        </span>
+        <span style="font-size:11px;color:#9e9d97;margin-left:auto;">⚡ Iran war crisis: Mar–Apr peak</span>
+      </div>
+      <div class="chart-wrap" style="height:200px;">
+        <canvas id="trendChart" role="img" aria-label="Weekly Petron vs Shell fuel price trend Philippines 2026 including Iran war crisis spike"></canvas>
+      </div>
+    </div>
+
+    <!-- Head-to-head -->
+    <div class="panel">
+      <div class="panel-title">Petron vs Shell — this week</div>
+      <table class="h2h-table">
+        <thead>
+          <tr>
+            <th>Fuel</th>
+            <th>Petron</th>
+            <th>Shell</th>
+            <th>Save</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>RON 91</td>
+            <td><span class="h2h-winner">₱84.45</span></td>
+            <td><span class="h2h-loser">₱87.35</span></td>
+            <td><span class="h2h-save">₱2.90/L</span></td>
+          </tr>
+          <tr>
+            <td>RON 95</td>
+            <td><span class="h2h-winner">₱87.55</span></td>
+            <td><span class="h2h-loser">₱90.45</span></td>
+            <td><span class="h2h-save">₱2.90/L</span></td>
+          </tr>
+          <tr>
+            <td>Diesel std</td>
+            <td><span class="h2h-winner">₱79.90</span></td>
+            <td><span class="h2h-loser">₱83.79</span></td>
+            <td><span class="h2h-save">₱3.89/L</span></td>
+          </tr>
+          <tr>
+            <td>Diesel prem</td>
+            <td><span class="h2h-winner">₱83.15</span></td>
+            <td><span class="h2h-loser">₱87.50</span></td>
+            <td><span class="h2h-save">₱4.35/L</span></td>
+          </tr>
+          <tr>
+            <td>Diesel cetane</td>
+            <td><span class="h2h-winner">CN 60</span></td>
+            <td><span class="h2h-loser">CN 54</span></td>
+            <td><span class="h2h-save">Petron</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:12px; font-size:11px; color:var(--text3); line-height:1.6;">
+        Green = cheaper. Petron is lower-priced across all fuel types this week. Both brands applied identical DOE adjustments on Tue May 12.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Brand price cards -->
+  <div class="two-col">
+
+    <!-- Petron -->
+    <div class="panel" style="padding:0; overflow:hidden;">
+      <div style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px;">
+        <div class="panel-title" style="margin:0;">Petron</div>
+        <span style="font-size:11px; color:var(--text3);">2,100+ stations nationwide</span>
+      </div>
+      <div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#6b6a65;"></div>
+            <div>
+              <div class="bp-name">Petron Gasul</div>
+              <div class="bp-grade">Unleaded 91 <span class="grade-tag tag-std">standard</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱84.45</div>
+            <div class="bp-chg up">▲ +₱0.47</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#1a4fa0;"></div>
+            <div>
+              <div class="bp-name">Petron XCS</div>
+              <div class="bp-grade">Unleaded 95 <span class="grade-tag tag-prem">performance</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱87.55</div>
+            <div class="bp-chg up">▲ +₱0.47</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#7057d6;"></div>
+            <div>
+              <div class="bp-name">Petron Blaze 100</div>
+              <div class="bp-grade">RON 100 <span class="grade-tag tag-top">top grade</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱97.80</div>
+            <div class="bp-chg up">▲ +₱0.47</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#6b6a65;"></div>
+            <div>
+              <div class="bp-name">Petron Diesel Max</div>
+              <div class="bp-grade">Diesel <span class="grade-tag tag-std">standard</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱79.90</div>
+            <div class="bp-chg down">▼ −₱9.57</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#1a7a52;"></div>
+            <div>
+              <div class="bp-name">Petron Turbo Diesel</div>
+              <div class="bp-grade">Diesel · CN 60 <span class="grade-tag tag-prem">premium</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱83.15</div>
+            <div class="bp-chg down">▼ −₱9.57</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#c47d00;"></div>
+            <div>
+              <div class="bp-name">Petron Kerosene</div>
+              <div class="bp-grade">Kerosene</div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱79.20</div>
+            <div class="bp-chg down">▼ −₱13.30</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shell -->
+    <div class="panel" style="padding:0; overflow:hidden;">
+      <div style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px;">
+        <div class="panel-title" style="margin:0;">Shell</div>
+        <span style="font-size:11px; color:var(--text3);">1,050+ stations nationwide</span>
+      </div>
+      <div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#6b6a65;"></div>
+            <div>
+              <div class="bp-name">Shell FuelSave Unl.</div>
+              <div class="bp-grade">Unleaded 91 <span class="grade-tag tag-std">standard</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱87.35</div>
+            <div class="bp-chg up">▲ +₱0.47</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#1a4fa0;"></div>
+            <div>
+              <div class="bp-name">Shell V-Power Nitro+</div>
+              <div class="bp-grade">Unleaded 95 <span class="grade-tag tag-prem">performance</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱90.45</div>
+            <div class="bp-chg up">▲ +₱0.47</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#7057d6;"></div>
+            <div>
+              <div class="bp-name">Shell V-Power Racing</div>
+              <div class="bp-grade">RON 97 <span class="grade-tag tag-top">top grade</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱94.20</div>
+            <div class="bp-chg up">▲ +₱0.47</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#6b6a65;"></div>
+            <div>
+              <div class="bp-name">Shell FuelSave Diesel</div>
+              <div class="bp-grade">Diesel <span class="grade-tag tag-std">standard</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱83.79</div>
+            <div class="bp-chg down">▼ −₱9.57</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#1a7a52;"></div>
+            <div>
+              <div class="bp-name">Shell V-Power Diesel</div>
+              <div class="bp-grade">Diesel · CN 54 <span class="grade-tag tag-prem">premium</span></div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱87.50</div>
+            <div class="bp-chg down">▼ −₱9.57</div>
+          </div>
+        </div>
+        <div class="bp-row">
+          <div class="bp-left">
+            <div class="bp-dot" style="background:#c47d00;"></div>
+            <div>
+              <div class="bp-name">Shell Kerosene</div>
+              <div class="bp-grade">Kerosene</div>
+            </div>
+          </div>
+          <div class="bp-right">
+            <div class="bp-price">₱83.00</div>
+            <div class="bp-chg down">▼ −₱13.30</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Tank calculator -->
+  <div class="panel" style="margin-bottom:12px;">
+    <div class="panel-title">Tank cost calculator</div>
+    <div class="calc-form">
+      <div class="cf-field">
+        <label>Fuel type</label>
+        <select id="fc-type" onchange="calc()">
+          <option value="r91">Gasoline RON 91</option>
+          <option value="r95">Gasoline RON 95</option>
+          <option value="dsl">Diesel (standard — Diesel Max / FuelSave)</option>
+          <option value="dslp">Diesel (premium — Turbo Diesel / V-Power)</option>
+        </select>
+      </div>
+      <div class="cf-field">
+        <label>Tank size (liters)</label>
+        <input type="number" id="fc-tank" value="40" min="5" max="120" step="1" oninput="calc()">
+      </div>
+      <div class="cf-field">
+        <label>Current fuel level</label>
+        <select id="fc-lvl" onchange="calc()">
+          <option value="0">Empty (0%)</option>
+          <option value="0.125">1/8 full (~12%)</option>
+          <option value="0.25" selected>1/4 full (~25%)</option>
+          <option value="0.375">3/8 full (~38%)</option>
+          <option value="0.5">Half full (~50%)</option>
+          <option value="0.625">5/8 full (~63%)</option>
+          <option value="0.75">3/4 full (~75%)</option>
+        </select>
+      </div>
+      <div class="cf-field">
+        <label>Fill to</label>
+        <select id="fc-fill" onchange="calc()">
+          <option value="0.5">Half tank</option>
+          <option value="0.75">3/4 tank</option>
+          <option value="1" selected>Full tank</option>
+        </select>
+      </div>
+    </div>
+    <div class="calc-results">
+      <div class="cr-card">
+        <div class="cr-label">Liters needed</div>
+        <div class="cr-value" id="cr-liters">30.0 L</div>
+        <div class="cr-sub" id="cr-pct">25% → 100%</div>
+      </div>
+      <div class="cr-card">
+        <div class="cr-label">Cost at Petron</div>
+        <div class="cr-value" id="cr-petron">₱2,533</div>
+        <div class="cr-sub" id="cr-petron-sub">@ ₱84.45/L</div>
+      </div>
+      <div class="cr-card">
+        <div class="cr-label">Cost at Shell</div>
+        <div class="cr-value" id="cr-shell">₱2,621</div>
+        <div class="cr-sub" id="cr-shell-sub">@ ₱87.35/L</div>
+      </div>
+      <div class="cr-card">
+        <div class="cr-label">Save at Petron</div>
+        <div class="cr-value green" id="cr-save">₱87</div>
+        <div class="cr-sub" id="cr-save-sub">₱2.90/L cheaper</div>
+      </div>
+    </div>
+    <div class="winner-banner good" id="calc-banner">
+      <svg viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm0 14a6 6 0 110-12 6 6 0 010 12zm1-9H9v3H6l4 4 4-4h-3V7z"/></svg>
+      <span id="calc-msg">Petron saves you <strong>₱87.00</strong> on this fill-up vs Shell. Both applied the same ▲₱0.47/L Tuesday adjustment.</span>
+    </div>
+  </div>
+
+  <!-- Fill-up advice -->
+  <div class="advice-box good" id="adv-box">
+    <div class="adv-emoji" id="adv-emoji">📉</div>
+    <div>
+      <div class="adv-title" id="adv-title">Major diesel rollback this week — fill up now!</div>
+      <div class="adv-body" id="adv-body">Diesel dropped ₱9.57/L this Tuesday (May 12) — one of the largest single-week rollbacks of 2026. Fill your diesel tank today. The next DOE announcement comes Monday May 18 evening; if another rollback is signaled, great — if not, you already locked in this week's low.</div>
+    </div>
+  </div>
+
+  <!-- AI Fuel Assistant -->
+  <div class="panel" style="margin-bottom:12px;" id="ai-panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div class="panel-title" style="margin:0;">AI fuel assistant</div>
+      <span style="font-size:11px;background:#e6f5ed;color:#1a7a52;padding:3px 8px;border-radius:20px;font-weight:500;">Powered by Groq AI · Free</span>
+    </div>
+    <p style="font-size:12px;color:#9e9d97;margin-bottom:14px;">Ask about next week's forecast, when to fill up, price trends, or anything fuel-related in the Philippines.</p>
+    <div id="ai-messages" style="min-height:60px;max-height:380px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:10px;"></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;" id="ai-chips">
+      <button class="ai-chip" onclick="askAI('Will fuel prices go up or down next week May 19?')">Will prices rise next week?</button>
+      <button class="ai-chip" onclick="askAI('Should I fill up now or wait until next Tuesday?')">Fill up now or wait?</button>
+      <button class="ai-chip" onclick="askAI('Why did diesel drop so much this week May 12?')">Why did diesel drop?</button>
+      <button class="ai-chip" onclick="askAI('What is the fuel price forecast for the next 2 to 3 weeks?')">2–3 week forecast</button>
+      <button class="ai-chip" onclick="askAI('Is Petron or Shell better value for money?')">Petron vs Shell value?</button>
+      <button class="ai-chip" onclick="askAI('What caused the massive fuel price spike in March and April 2026?')">Why did prices spike in March?</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <textarea id="ai-input" rows="2"
+        placeholder="Ask about fuel prices, forecasts, when to fill up..."
+        style="flex:1;resize:none;padding:10px 12px;border:1px solid rgba(0,0,0,0.12);border-radius:10px;font-family:inherit;font-size:13px;line-height:1.5;background:#fff;color:#1a1917;outline:none;"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI();}"></textarea>
+      <button id="ai-send-btn" onclick="sendAI()"
+        style="flex-shrink:0;background:#1a1917;color:#fff;border:none;border-radius:10px;padding:0 18px;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;height:44px;display:flex;align-items:center;gap:6px;transition:opacity .15s;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Send
+      </button>
+    </div>
+    <p style="font-size:11px;color:#9e9d97;margin-top:7px;">Press Enter to send · Shift+Enter for new line</p>
+  </div>
+
+  <!-- External links -->
+  <div class="links-row">
+    <a class="link-btn" href="https://www.doe.gov.ph" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24"><path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      DOE Oil Monitor
+    </a>
+    <a class="link-btn" href="https://fuelprice.ph" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24"><path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      fuelprice.ph
+    </a>
+    <a class="link-btn" href="https://gaswatchph.com" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24"><path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      GasWatch PH
+    </a>
+    <a class="link-btn" href="https://www.petron.com" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24"><path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      Petron.com
+    </a>
+    <a class="link-btn" href="https://www.shell.com.ph" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24"><path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      Shell Philippines
+    </a>
+  </div>
+
+  <div class="footer">
+    <p>Data sourced from DOE Oil Monitor weekly advisories · NCR (Metro Manila) prices · Updated every Tuesday 6:00 AM</p>
+    <p style="margin-top:4px;">Prices vary ±₱1–2 by city and station · Always verify with official sources before filling up</p>
+  </div>
+
+</div>
+
+<script>
+/* ── Data ──
+   Petron Gasul (RON 91) and Shell FuelSave Unleaded (RON 91) weekly prices.
+   Jan–Feb: Pre-war, both brands slowly rolling back from late-2025 highs.
+   Feb 28: US-Israel war against Iran begins → Strait of Hormuz closes.
+   Mar 3–Apr 7: 13 consecutive weekly hikes; gasoline peaks ~₱105–113, diesel ~₱130–154.
+   Apr 8: Ceasefire declared. Rollbacks begin.
+   Apr 14–May 12: Steady weekly rollbacks on diesel; gas peaks then slowly eases.
+   Shell consistently prices ~₱2.90/L above Petron on RON 91.
+   Sources: Rappler, GasWatch PH, fuelprice.ph, Expressway.PH, DOE advisories.
+*/
+const HIST = {
+  labels: [
+    'Jan 6','Jan 13','Jan 20','Jan 27',
+    'Feb 3','Feb 10','Feb 17','Feb 24',
+    'Mar 3','Mar 10','Mar 17','Mar 24',
+    'Mar 31','Apr 7','Apr 14','Apr 21',
+    'Apr 28','May 5','May 12'
+  ],
+  // Petron Gasul RON 91 (₱/L, NCR)
+  petron_ron91: [
+    64.90, 64.40, 63.90, 63.40,
+    62.90, 62.40, 61.90, 61.40,
+    65.20, 72.80, 83.50, 90.10,
+    96.40,101.30, 97.80, 90.20,
+    84.65, 83.98, 84.45
+  ],
+  // Shell FuelSave Unleaded RON 91 (₱/L, NCR) — ~₱2.90–3.30 above Petron
+  shell_ron91: [
+    68.15, 67.65, 67.15, 66.65,
+    66.15, 65.65, 65.15, 64.65,
+    68.50, 76.10, 86.80, 93.40,
+    99.70,105.20,101.10, 93.10,
+    87.55, 86.88, 87.35
+  ],
+  // Petron Gasul RON 95 (₱/L) — ~₱3.10 above RON 91
+  petron_ron95: [
+    67.65, 67.15, 66.65, 66.15,
+    65.65, 65.15, 64.65, 64.15,
+    68.30, 75.90, 86.60, 93.20,
+    99.50,104.40,100.90, 93.30,
+    87.75, 87.08, 87.55
+  ],
+  // Shell V-Power Nitro+ RON 95 (₱/L) — ~₱2.90 above Petron RON 95
+  shell_ron95: [
+    71.00, 70.50, 70.00, 69.50,
+    69.00, 68.50, 68.00, 67.50,
+    71.20, 78.80, 89.50, 96.10,
+   102.40,107.30,103.80, 96.20,
+    90.65, 89.98, 90.45
+  ],
+  // Petron Diesel Max (standard, ₱/L) — pre-war ~₱59-60, crisis peak ~₱130+, rollbacks to ~₱79
+  petron_diesel: [
+    59.90, 59.40, 58.90, 58.40,
+    57.90, 57.40, 56.90, 56.40,
+    63.00, 87.25,107.50,119.80,
+   128.10,134.60,121.80,105.20,
+    95.15, 89.47, 79.90
+  ],
+  // Shell FuelSave Diesel (standard, ₱/L) — ~₱3.89 above Petron diesel
+  shell_diesel: [
+    64.50, 64.00, 63.50, 63.00,
+    62.50, 62.00, 61.50, 61.00,
+    66.89, 91.14,111.39,123.69,
+   131.99,138.49,125.69,109.09,
+    99.04, 93.36, 83.79
+  ],
+};
+
+const PRICES = {
+  r91:  { petron:84.45, shell:87.35, lw_p:83.98, lw_s:86.88, adj:'+₱0.47/L', chgDir:'up' },
+  r95:  { petron:87.55, shell:90.45, lw_p:87.08, lw_s:89.98, adj:'+₱0.47/L', chgDir:'up' },
+  dsl:  { petron:79.90, shell:83.79, lw_p:89.47, lw_s:93.36, adj:'−₱9.57/L', chgDir:'down' },
+  dslp: { petron:83.15, shell:87.50, lw_p:92.72, lw_s:97.07, adj:'−₱9.57/L', chgDir:'down' },
+};
+
+const FUEL_LABELS = { r91:'RON 91', r95:'RON 95', dsl:'Diesel (standard)', dslp:'Diesel (premium)' };
+
+/* ── Chart ── */
+let tChart = null;
+let curFuel = 'ron91';
+
+
+const FUEL_MAP = {
+  ron91:  { petron: 'petron_ron91', shell: 'shell_ron91',  pLabel: 'Petron Gasul',         sLabel: 'Shell FuelSave Unl.' },
+  ron95:  { petron: 'petron_ron95', shell: 'shell_ron95',  pLabel: 'Petron XCS',            sLabel: 'Shell V-Power Nitro+' },
+  diesel: { petron: 'petron_diesel',shell: 'shell_diesel', pLabel: 'Petron Diesel Max',     sLabel: 'Shell FuelSave Diesel' },
+};
+
+function renderChart(fuel) {
+  const fm = FUEL_MAP[fuel];
+  const pData = HIST[fm.petron];
+  const sData = HIST[fm.shell];
+  const ctx   = document.getElementById('trendChart').getContext('2d');
+  if (tChart) tChart.destroy();
+
+  // Crisis annotation band (Mar 3 – Apr 7 = indices 8–13)
+  tChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: HIST.labels,
+      datasets: [
+        {
+          label: fm.pLabel,
+          data: pData,
+          borderColor: '#0057a8',
+          backgroundColor: 'rgba(0,87,168,0.06)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointBackgroundColor: '#0057a8',
+          borderWidth: 2,
+        },
+        {
+          label: fm.sLabel,
+          data: sData,
+          borderColor: '#dd1d21',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.35,
+          pointRadius: 3,
+          pointBackgroundColor: '#dd1d21',
+          borderWidth: 1.8,
+          borderDash: [4,3],
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a1917',
+          titleColor: '#fff',
+          bodyColor: 'rgba(255,255,255,.8)',
+          padding: 10,
+          cornerRadius: 8,
+          callbacks: {
+            label: c => ' ' + c.dataset.label + ': ₱' + c.parsed.y.toFixed(2)
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { font:{size:10}, color:'#9e9d97', maxRotation:45, autoSkip:true, maxTicksLimit:9 },
+          grid: { display: false },
+          border: { display: false }
+        },
+        y: {
+          ticks: { font:{size:10}, color:'#9e9d97', callback: v => '₱'+v },
+          grid: { color:'rgba(0,0,0,0.05)' },
+          border: { display: false }
+        }
+      }
+    }
+  });
+}
+
+function switchFuel(fuel, btn) {
+  curFuel = fuel;
+  document.querySelectorAll('.ftab').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  renderChart(fuel);
+}
+
+/* ── Calculator ── */
+function calc() {
+  const type = document.getElementById('fc-type').value;
+  const tank = parseFloat(document.getElementById('fc-tank').value) || 40;
+  const lvl  = parseFloat(document.getElementById('fc-lvl').value);
+  const fill = parseFloat(document.getElementById('fc-fill').value);
+  const L = Math.max(0, (fill - lvl) * tank);
+  const p = PRICES[type];
+  const cp = L * p.petron;
+  const cs = L * p.shell;
+  const diff = cs - cp;
+  const svP = L * (p.lw_p - p.petron);
+  const svS = L * (p.lw_s - p.shell);
+
+  document.getElementById('cr-liters').textContent   = L.toFixed(1) + ' L';
+  document.getElementById('cr-pct').textContent       = (lvl*100).toFixed(0) + '% → ' + (fill*100).toFixed(0) + '%';
+  document.getElementById('cr-petron').textContent    = '₱' + cp.toFixed(0);
+  document.getElementById('cr-petron-sub').textContent = '@ ₱' + p.petron.toFixed(2) + '/L';
+  document.getElementById('cr-shell').textContent     = '₱' + cs.toFixed(0);
+  document.getElementById('cr-shell-sub').textContent  = '@ ₱' + p.shell.toFixed(2) + '/L';
+  document.getElementById('cr-save').textContent      = '₱' + diff.toFixed(0);
+  document.getElementById('cr-save-sub').textContent   = '₱' + (diff/L).toFixed(2) + '/L cheaper';
+
+  const banner = document.getElementById('calc-banner');
+  const msg    = document.getElementById('calc-msg');
+  const lbl    = FUEL_LABELS[type];
+  if (svP > 20) {
+    banner.className = 'winner-banner good';
+    msg.innerHTML = `Petron saves <strong>₱${diff.toFixed(0)}</strong> vs Shell on this fill-up. Plus, vs last week you also save <strong>₱${svP.toFixed(0)}</strong> more on ${lbl} thanks to this week's adjustment.`;
+  } else if (p.chgDir === 'up') {
+    banner.className = 'winner-banner warn';
+    msg.innerHTML = `Petron saves <strong>₱${diff.toFixed(0)}</strong> vs Shell. Note: ${lbl} increased ${p.adj} this Tuesday.`;
+  } else {
+    banner.className = 'winner-banner good';
+    msg.innerHTML = `Petron saves <strong>₱${diff.toFixed(0)}</strong> vs Shell on this fill-up (₱${(diff/L).toFixed(2)}/L). Both applied ${p.adj} this week.`;
+  }
+}
+
+/* ── Advice ── */
+function updateAdvice() {
+  const dsl = HIST.diesel;
+  const gas = HIST.ron91;
+  const dslChg = dsl[dsl.length-1] - dsl[dsl.length-2];
+  const gasChg = gas[gas.length-1] - gas[gas.length-2];
+  const box = document.getElementById('adv-box');
+  const emoji = document.getElementById('adv-emoji');
+  const title = document.getElementById('adv-title');
+  const body  = document.getElementById('adv-body');
+
+  if (dslChg < -5) {
+    box.className = 'advice-box good';
+    emoji.textContent = '📉';
+    title.textContent = 'Major diesel rollback this week — fill up now!';
+    body.textContent  = 'Diesel dropped ₱' + Math.abs(dslChg).toFixed(2) + '/L this Tuesday — one of the biggest single-week rollbacks of 2026. Fill your diesel tank today. Next DOE announcement is Monday May 18 evening.';
+  } else if (gasChg > 1) {
+    box.className = 'advice-box warn';
+    emoji.textContent = '⛽';
+    title.textContent = 'Gasoline rising — consider topping up before next Tuesday';
+    body.textContent  = 'Gas has increased ₱' + gasChg.toFixed(2) + '/L this week and has been trending upward. Watch Monday\'s DOE announcement — if another hike is confirmed, fill up Monday night to lock in this week\'s price.';
+  } else {
+    box.className = 'advice-box neutral';
+    emoji.textContent = '✅';
+    title.textContent = 'Stable prices — fill up as needed';
+    body.textContent  = 'No strong signal to rush or delay. Check back Monday evening for next week\'s DOE announcement.';
+  }
+}
+
+/* ── Init ── */
+function init() {
+  const now = new Date();
+  document.getElementById('week-label').textContent =
+    'Week of May 12–18, 2026 · Updated ' + now.toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'});
+  renderChart('ron91');
+  calc();
+  updateAdvice();
+}
+
+init();
+
+/* ── AI Fuel Assistant ── */
+const AI_CONTEXT = `You are an expert Philippine fuel price analyst assistant embedded in a live fuel tracker dashboard. You help Filipino motorists understand fuel price trends, make fill-up decisions, and understand the market.
+
+CURRENT FUEL DATA (Week of May 12-18, 2026 — effective Tuesday May 12, 6:00 AM):
+
+DOE ANNOUNCEMENT (confirmed by Petron, Shell, Seaoil, PTT, Unioil):
+- Gasoline RON 91/95: UP +₱0.47/L (3rd consecutive week of increases)
+- Diesel: DOWN -₱9.57/L (4th consecutive week of rollbacks — major relief)
+- Kerosene: DOWN -₱13.30/L
+- LPG: UP +₱1.22/kg (+₱13.42 per 11kg cylinder)
+
+CURRENT PUMP PRICES (NCR Metro Manila):
+PETRON:
+- Petron Gasul (RON 91): ₱84.45/L
+- Petron XCS (RON 95): ₱87.55/L
+- Petron Blaze 100 (RON 100): ₱97.80/L
+- Petron Diesel Max (standard diesel): ₱79.90/L
+- Petron Turbo Diesel (PREMIUM diesel, CN 60): ₱83.15/L  ← NOTE: Turbo Diesel IS the premium grade
+- Petron Kerosene: ₱79.20/L
+
+SHELL:
+- Shell FuelSave Unleaded (RON 91): ₱87.35/L
+- Shell V-Power Nitro+ (RON 95): ₱90.45/L
+- Shell V-Power Racing (RON 97): ₱94.20/L
+- Shell FuelSave Diesel (standard): ₱83.79/L
+- Shell V-Power Diesel (premium, CN 54): ₱87.50/L
+- Shell Kerosene: ₱83.00/L
+
+PETRON IS CHEAPER across all fuel types: RON 91 by ₱2.90/L, diesel standard by ₱3.89/L, diesel premium by ₱4.35/L.
+
+YEAR-TO-DATE CONTEXT (2026 Philippine Energy Crisis):
+- The crisis began Feb 28, 2026 when the US-Israel war against Iran closed the Strait of Hormuz
+- Philippines imports 98% of oil from the Middle East — severely impacted
+- Prices peaked in early April 2026: diesel hit ₱130-154/L, gasoline hit ₱100-113/L (Petron Gasul peaked at ~₱101/L)
+- Ceasefire declared April 8, 2026 — rollbacks began
+- Diesel has rolled back a total of ~₱68/L from its peak since April 14
+- Gasoline is still up net ₱46.59/L from pre-war levels (pre-war: ~₱61-65/L)
+- Diesel is up net ₱20.12/L from pre-war levels
+
+PRICE TREND (Petron Gasul RON 91 recent weeks):
+Apr 28: ₱84.65 | May 5: ₱83.98 | May 12: ₱84.45
+
+DIESEL TREND (Petron Diesel Max recent weeks):
+Apr 7: ₱134.60 (peak) | Apr 14: ₱121.80 | Apr 21: ₱105.20 | Apr 28: ₱95.15 | May 5: ₱89.47 | May 12: ₱79.90
+
+NEXT WEEK SIGNALS (May 19):
+- Gasoline has been rising slowly (+₱2.21 two weeks ago, +₱0.53 last week, +₱0.47 this week) — the pace is slowing, suggesting a rollback may come soon if MOPS softens
+- Diesel has been rolling back strongly — another rollback is possible but magnitude uncertain
+- Key factors: MOPS Singapore prices, BSP peso-dollar rate, Strait of Hormuz situation
+- DOE announces every Monday evening; adjustments take effect Tuesday 6:00 AM
+
+ADVICE: Petron Turbo Diesel naming is confusing — "Turbo Diesel" is the PREMIUM grade (CN 60), "Diesel Max" is the STANDARD grade. Opposite of what the names suggest.
+
+Always give practical, specific advice tailored to Filipino motorists. Use peso signs (₱). Be concise and direct. If asked about fill-up timing, give a clear yes/no recommendation with reasoning.`;
+
+let aiHistory = [];
+
+function addBubble(text, cls) {
+  const box = document.getElementById('ai-messages');
+  const b = document.createElement('div');
+  b.className = 'ai-bubble ' + cls;
+  b.textContent = text;
+  box.appendChild(b);
+  box.scrollTop = box.scrollHeight;
+  return b;
+}
+
+function askAI(question) {
+  document.getElementById('ai-input').value = question;
+  sendAI();
+}
+
+async function sendAI() {
+  const input = document.getElementById('ai-input');
+  const btn   = document.getElementById('ai-send-btn');
+  const q     = input.value.trim();
+  if (!q) return;
+
+  input.value = '';
+  btn.disabled = true;
+
+  addBubble(q, 'user');
+  aiHistory.push({ role: 'user', content: q });
+
+  const typingBubble = addBubble('Analyzing fuel data...', 'typing');
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system: AI_CONTEXT,
+        messages: aiHistory
+      })
+    });
+
+    const data = await res.json();
+    typingBubble.remove();
+
+    if (data.content && data.content[0]) {
+      const reply = data.content[0].text;
+      addBubble(reply, 'assistant');
+      aiHistory.push({ role: 'assistant', content: reply });
+      // Keep history to last 10 messages to avoid token limits
+      if (aiHistory.length > 10) aiHistory = aiHistory.slice(-10);
+    } else if (data.error) {
+      addBubble('Error: ' + data.error.message, 'error');
+      aiHistory.pop();
+    }
+  } catch (err) {
+    typingBubble.remove();
+    addBubble('Could not reach the AI. Check your internet connection and try again.', 'error');
+    aiHistory.pop();
+  }
+
+  btn.disabled = false;
+  document.getElementById('ai-messages').scrollTop = 999999;
+}
+
+</script>
+</body>
+</html>
+
     --text3: #9e9d97;
     --green: #1a7a52;
     --green-bg: #e6f5ed;
