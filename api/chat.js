@@ -108,7 +108,7 @@ async function handleFuel(apiKey, res) {
   const prompt =
 `Today is ${today} (Philippine time).
 
-Search the web for:
+Search query: site:fuelprice.ph Petron Shell Unioil for:
 1. The most recent DOE (Department of Energy Philippines) weekly petroleum price monitoring report — find the LATEST effective date and adjustment amounts
 2. The ACTUAL CURRENT PUMP PRICES (not DOE SRP baselines) at Petron, Shell, and Unioil stations in Metro Manila NCR as of today
 
