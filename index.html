@@ -957,8 +957,9 @@ function calc() {
 
 /* ── Advice ── */
 function updateAdvice() {
-  const dsl = HIST.diesel;
-  const gas = HIST.ron91;
+  const dsl = HIST.petron_diesel || [];
+  const gas = HIST.petron_ron91 || [];
+  if (!dsl.length || !gas.length) return;
   const dslChg = dsl[dsl.length-1] - dsl[dsl.length-2];
   const gasChg = gas[gas.length-1] - gas[gas.length-2];
   const box = document.getElementById('adv-box');
@@ -997,6 +998,7 @@ function init() {
 init();
 
 /* ── AI Fuel Assistant ── */
+let aiHistory = [];
 const AI_CONTEXT = `You are an expert Philippine fuel price analyst assistant embedded in a live fuel tracker dashboard. You help Filipino motorists understand fuel price trends, make fill-up decisions, and understand the market.
 
 CURRENT FUEL DATA (Week of May 12-18, 2026 — effective Tuesday May 12, 6:00 AM):
@@ -1050,8 +1052,6 @@ NEXT WEEK SIGNALS (May 19):
 ADVICE: Petron Turbo Diesel naming is confusing — "Turbo Diesel" is the PREMIUM grade (CN 60), "Diesel Max" is the STANDARD grade. Opposite of what the names suggest.
 
 Always give practical, specific advice tailored to Filipino motorists. Use peso signs (₱). Be concise and direct. If asked about fill-up timing, give a clear yes/no recommendation with reasoning.`;
-
-let aiHistory = [];
 
 function addBubble(text, cls) {
   const box = document.getElementById('ai-messages');
