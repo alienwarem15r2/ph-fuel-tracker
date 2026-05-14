@@ -11,6 +11,18 @@ const GEMINI_MODEL = "gemini-2.0-flash"; // confirmed valid API name
 const CACHE_TTL = 15 * 60 * 1000;
 const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 } };
 
+// At the top of api/chat.js, add:
+const adjCache = { data: null, ts: 0 };
+const ADJ_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+function getAdjCache() {
+  if (adjCache.data && (Date.now() - adjCache.ts) < ADJ_CACHE_TTL) return adjCache.data;
+  return null;
+}
+function setAdjCache(data) {
+  adjCache.data = data; adjCache.ts = Date.now();
+}
+
 function getCache(key) {
   const e = apiCache[key];
   if (e && e.data && (Date.now() - e.ts) < CACHE_TTL) {
@@ -170,23 +182,28 @@ async function handleFuel(res) {
     }
   }
 
-  // 2b. If we have scraped prices but no adjustments, ask Gemini for just the DOE adjustment
-  if (result && geminiKey && !result.doe_adjustment?.gasoline_ron91_95) {
-    try {
-      const adjPrompt = `Today is ${today}. Search for the latest DOE Philippines weekly fuel price adjustment effective this week only. Return ONLY compact JSON, no markdown: {"gasoline_ron91_95":"+0.00 or -0.00 or null","diesel_std":"+0.00 or -0.00 or null","kerosene":"+0.00 or -0.00 or null","lpg_per_kg":"+0.00 or -0.00 or null","note":"1 sentence context"}`;
-      const adjRaw = await geminiGenerate(geminiKey, adjPrompt);
-      const adjJson = extractJSON(adjRaw);
-      if (!adjJson.error && (adjJson.gasoline_ron91_95 || adjJson.diesel_std || adjJson.note)) {
-        result.doe_adjustment = adjJson;
-        // Also update the note to show both sources
-        if (!result.doe_adjustment.note) result.doe_adjustment.note = "Live adjustment via Gemini";
-        console.log("[fuel] Gemini adjustment OK:", adjJson.note || adjJson.gasoline_ron91_95);
-      }
-    } catch (e) {
-      console.warn("[fuel] Gemini adjustment failed:", e.message);
+  // 2b. Hardcoded DOE adjustment for May 12-18, 2026
+  // (Gemini rate limit too restrictive for a second call)
+  if (result && source === "scrape") {
+    result.doe_adjustment = {
+      gasoline_ron91_95: "+0.47",
+      diesel_std: "-9.57",
+      kerosene: "0.00",
+      lpg_per_kg: "0.00",
+      note: "Week of May 12: gasoline +₱0.47/L, diesel rolled back ₱9.57/L — largest diesel cut in months"
+    };
+    
+    const dieselAdj = Number(result.doe_adjustment.diesel_std);
+    if (dieselAdj < 0) {
+      result.fill_up_advice = "Diesel rolled back ₱" + Math.abs(dieselAdj) + "/L this week — excellent time to fill up if you drive a diesel vehicle.";
+    } else if (dieselAdj > 0) {
+      result.fill_up_advice = "Prices rose this week. Consider filling up before next Tuesday's adjustment.";
+    } else {
+      result.fill_up_advice = "Prices are stable this week. Fill up based on your tank level and travel needs.";
     }
+    
+    console.log("[fuel] Hardcoded adjustment applied:", result.doe_adjustment.note);
   }
-
 
 
   // 3. Groq fallback
