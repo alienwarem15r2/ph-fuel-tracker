@@ -401,6 +401,17 @@
           <svg style="position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;width:11px;height:11px;stroke:var(--text3);fill:none;stroke-width:2;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div style="width:1px;height:20px;background:var(--border);"></div>
+        <div style="position:relative;">
+          <select id="brand-select" onchange="switchBrand(this.value)"
+            style="appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 28px 4px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:var(--text2);font-weight:500;">
+            <option value="avg">All brands (avg)</option>
+            <option value="petron">🔵 Petron</option>
+            <option value="shell">🔴 Shell</option>
+            <option value="unioil">🟠 Unioil</option>
+          </select>
+          <svg style="position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;width:11px;height:11px;stroke:var(--text3);fill:none;stroke-width:2;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div style="width:1px;height:20px;background:var(--border);"></div>
         <button class="ftab on" id="city-fuel-r91" onclick="switchCityFuel('r91',this)">RON 91</button>
         <button class="ftab" id="city-fuel-r95" onclick="switchCityFuel('r95',this)">RON 95</button>
         <button class="ftab" id="city-fuel-dsl" onclick="switchCityFuel('dsl',this)">Diesel</button>
@@ -442,8 +453,8 @@
 
     <!-- Head-to-head -->
     <div class="panel">
-      <div class="panel-title">Petron vs Shell vs Unioil — this week</div>
-      <table class="h2h-table">
+      <div class="panel-title">Petron vs Shell vs Unioil — this week <span class="brand-region-label" style="font-weight:400;font-size:11px;color:var(--text3);">(NCR prices)</span></div>
+      <table class="h2h-table" id="h2h-table">
         <thead>
           <tr>
             <th>Fuel</th>
@@ -453,7 +464,7 @@
             <th>Cheapest</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="h2h-tbody">
           <tr>
             <td>RON 91</td>
             <td><span class="h2h-loser">&#8369;84.45</span></td>
@@ -505,7 +516,7 @@
     <div class="panel" style="padding:0; overflow:hidden;">
       <div style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px;">
         <div class="panel-title" style="margin:0;">Petron</div>
-        <span style="font-size:11px; color:var(--text3);">2,100+ stations nationwide</span>
+        <span style="font-size:11px; color:var(--text3);">2,100+ stations · <span class="brand-region-label">NCR prices</span></span>
       </div>
       <div>
         <div class="bp-row">
@@ -517,8 +528,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱84.45</div>
-            <div class="bp-chg up">▲ +₱0.47</div>
+            <div class="bp-price" id="price-petron-gasul">₱84.45</div>
+            <div class="bp-chg up" id="chg-petron-gasul">▲ +₱0.47</div>
           </div>
         </div>
         <div class="bp-row">
@@ -530,8 +541,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱87.55</div>
-            <div class="bp-chg up">▲ +₱0.47</div>
+            <div class="bp-price" id="price-petron-xcs">₱87.55</div>
+            <div class="bp-chg up" id="chg-petron-xcs">▲ +₱0.47</div>
           </div>
         </div>
         <div class="bp-row">
@@ -543,8 +554,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱97.80</div>
-            <div class="bp-chg up">▲ +₱0.47</div>
+            <div class="bp-price" id="price-petron-blaze">₱97.80</div>
+            <div class="bp-chg up" id="chg-petron-blaze">▲ +₱0.47</div>
           </div>
         </div>
         <div class="bp-row">
@@ -556,8 +567,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱79.90</div>
-            <div class="bp-chg down">▼ −₱9.57</div>
+            <div class="bp-price" id="price-petron-dmax">₱79.90</div>
+            <div class="bp-chg down" id="chg-petron-dmax">▼ −₱9.57</div>
           </div>
         </div>
         <div class="bp-row">
@@ -569,8 +580,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱83.15</div>
-            <div class="bp-chg down">▼ −₱9.57</div>
+            <div class="bp-price" id="price-petron-turbo">₱83.15</div>
+            <div class="bp-chg down" id="chg-petron-turbo">▼ −₱9.57</div>
           </div>
         </div>
         <div class="bp-row">
@@ -582,8 +593,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱79.20</div>
-            <div class="bp-chg down">▼ −₱13.30</div>
+            <div class="bp-price" id="price-petron-kero">₱79.20</div>
+            <div class="bp-chg down" id="chg-petron-kero">▼ −₱13.30</div>
           </div>
         </div>
       </div>
@@ -593,7 +604,7 @@
     <div class="panel" style="padding:0; overflow:hidden;">
       <div style="padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px;">
         <div class="panel-title" style="margin:0;">Shell</div>
-        <span style="font-size:11px; color:var(--text3);">1,050+ stations nationwide</span>
+        <span style="font-size:11px; color:var(--text3);">1,050+ stations · <span class="brand-region-label">NCR prices</span></span>
       </div>
       <div>
         <div class="bp-row">
@@ -605,8 +616,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱87.35</div>
-            <div class="bp-chg up">▲ +₱0.47</div>
+            <div class="bp-price" id="price-shell-fsunl">₱87.35</div>
+            <div class="bp-chg up" id="chg-shell-fsunl">▲ +₱0.47</div>
           </div>
         </div>
         <div class="bp-row">
@@ -618,8 +629,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱90.45</div>
-            <div class="bp-chg up">▲ +₱0.47</div>
+            <div class="bp-price" id="price-shell-vpnitro">₱90.45</div>
+            <div class="bp-chg up" id="chg-shell-vpnitro">▲ +₱0.47</div>
           </div>
         </div>
         <div class="bp-row">
@@ -631,8 +642,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱94.20</div>
-            <div class="bp-chg up">▲ +₱0.47</div>
+            <div class="bp-price" id="price-shell-vprace">₱94.20</div>
+            <div class="bp-chg up" id="chg-shell-vprace">▲ +₱0.47</div>
           </div>
         </div>
         <div class="bp-row">
@@ -644,8 +655,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱83.79</div>
-            <div class="bp-chg down">▼ −₱9.57</div>
+            <div class="bp-price" id="price-shell-fsdsl">₱83.79</div>
+            <div class="bp-chg down" id="chg-shell-fsdsl">▼ −₱9.57</div>
           </div>
         </div>
         <div class="bp-row">
@@ -657,8 +668,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱87.50</div>
-            <div class="bp-chg down">▼ −₱9.57</div>
+            <div class="bp-price" id="price-shell-vpdsl">₱87.50</div>
+            <div class="bp-chg down" id="chg-shell-vpdsl">▼ −₱9.57</div>
           </div>
         </div>
         <div class="bp-row">
@@ -670,8 +681,8 @@
             </div>
           </div>
           <div class="bp-right">
-            <div class="bp-price">₱83.00</div>
-            <div class="bp-chg down">▼ −₱13.30</div>
+            <div class="bp-price" id="price-shell-kero">₱83.00</div>
+            <div class="bp-chg down" id="chg-shell-kero">▼ −₱13.30</div>
           </div>
         </div>
       </div>
@@ -685,7 +696,7 @@
       <div style="width:36px;height:36px;border-radius:8px;background:#FFF3E0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#E65100;flex-shrink:0;">U</div>
       <div>
         <div class="panel-title" style="margin:0;">Unioil</div>
-        <div style="font-size:11px;color:var(--text3);">91 stations · NCR · Euro 6 compliant · budget-friendly</div>
+        <div style="font-size:11px;color:var(--text3);">91 stations · <span class="brand-region-label">NCR prices</span> · Euro 6 compliant</div>
       </div>
       <span style="margin-left:auto;font-size:11px;background:#e6f5ed;color:#1a7a52;padding:3px 8px;border-radius:20px;font-weight:500;">Cheapest diesel brand</span>
     </div>
@@ -698,7 +709,7 @@
             <div class="bp-grade">Unleaded 91 <span class="grade-tag tag-std">standard</span></div>
           </div>
         </div>
-        <div class="bp-right"><div class="bp-price">&#8369;83.49</div><div class="bp-chg up">&#9650; +&#8369;0.47</div></div>
+        <div class="bp-right"><div class="bp-price" id="price-unioil-gas91">&#8369;83.49</div><div class="bp-chg up" id="chg-unioil-gas91">&#9650; +&#8369;0.47</div></div>
       </div>
       <div class="bp-row">
         <div class="bp-left">
@@ -708,7 +719,7 @@
             <div class="bp-grade">Unleaded 95 <span class="grade-tag tag-prem">performance</span></div>
           </div>
         </div>
-        <div class="bp-right"><div class="bp-price">&#8369;85.99</div><div class="bp-chg up">&#9650; +&#8369;0.47</div></div>
+        <div class="bp-right"><div class="bp-price" id="price-unioil-prem95">&#8369;85.99</div><div class="bp-chg up" id="chg-unioil-prem95">&#9650; +&#8369;0.47</div></div>
       </div>
       <div class="bp-row">
         <div class="bp-left">
@@ -718,7 +729,7 @@
             <div class="bp-grade">RON 97 <span class="grade-tag tag-top">select stations</span></div>
           </div>
         </div>
-        <div class="bp-right"><div class="bp-price">&#8369;91.50</div><div class="bp-chg up">&#9650; +&#8369;0.47</div></div>
+        <div class="bp-right"><div class="bp-price" id="price-unioil-super97">&#8369;91.50</div><div class="bp-chg up" id="chg-unioil-super97">&#9650; +&#8369;0.47</div></div>
       </div>
       <div class="bp-row">
         <div class="bp-left">
@@ -728,7 +739,7 @@
             <div class="bp-grade">Diesel <span class="grade-tag tag-prem">cheapest brand</span></div>
           </div>
         </div>
-        <div class="bp-right"><div class="bp-price">&#8369;76.19</div><div class="bp-chg down">&#9660; &#8722;&#8369;9.57</div></div>
+        <div class="bp-right"><div class="bp-price" id="price-unioil-dsl">&#8369;76.19</div><div class="bp-chg down" id="chg-unioil-dsl">&#9660; &#8722;&#8369;9.57</div></div>
       </div>
       <div class="bp-row" style="background:var(--surface2);">
         <div style="font-size:12px;color:var(--text2);display:flex;gap:16px;flex-wrap:wrap;width:100%;">
@@ -1221,7 +1232,6 @@ function init() {
   updateAdvice();
 }
 
-init();
 
 /* ── AI Fuel Assistant ── */
 let aiHistory = [];
@@ -1479,7 +1489,6 @@ function initPower() {
   buildInterruptionList();
 }
 
-initPower();
 
 
 /* Tab switching */
@@ -1500,9 +1509,152 @@ var PAMPANGA_CITIES_LIST = ['San Fernando', 'Angeles City', 'Mabalacat', 'Clark 
 var activeRegion = 'ncr';
 var activePowerRegion = 'ncr';
 
+
+/* Region-aware brand prices for cards and H2H table */
+var REGION_BRAND_PRICES = {
+  ncr: {
+    petron: {
+      ron91: { price: 84.45, chg: '+0.47', dir: 'up' },
+      ron95: { price: 87.55, chg: '+0.47', dir: 'up' },
+      ron100:{ price: 97.80, chg: '+0.47', dir: 'up' },
+      dsl:   { price: 79.90, chg: '-9.57', dir: 'down' },
+      dslp:  { price: 83.15, chg: '-9.57', dir: 'down' },
+      kero:  { price: 79.20, chg: '-13.30',dir: 'down' },
+    },
+    shell: {
+      ron91: { price: 87.35, chg: '+0.47', dir: 'up' },
+      ron95: { price: 90.45, chg: '+0.47', dir: 'up' },
+      ron97: { price: 94.20, chg: '+0.47', dir: 'up' },
+      dsl:   { price: 83.79, chg: '-9.57', dir: 'down' },
+      dslp:  { price: 87.50, chg: '-9.57', dir: 'down' },
+      kero:  { price: 83.00, chg: '-13.30',dir: 'down' },
+    },
+    unioil: {
+      ron91: { price: 83.49, chg: '+0.47', dir: 'up' },
+      ron95: { price: 85.99, chg: '+0.47', dir: 'up' },
+      ron97: { price: 91.50, chg: '+0.47', dir: 'up' },
+      dsl:   { price: 76.19, chg: '-9.57', dir: 'down' },
+    },
+    h2h: [
+      { fuel:'RON 91',      petron:84.45, shell:87.35, unioil:83.49, winner:'unioil', save:'0.96' },
+      { fuel:'RON 95',      petron:87.55, shell:90.45, unioil:85.99, winner:'unioil', save:'1.56' },
+      { fuel:'Diesel std',  petron:79.90, shell:83.79, unioil:76.19, winner:'unioil', save:'3.71' },
+      { fuel:'Diesel prem', petron:83.15, shell:87.50, unioil:null,  winner:'petron', save:'4.35' },
+      { fuel:'RON 97/100',  petron:97.80, shell:94.20, unioil:91.50, winner:'unioil', save:'2.70' },
+    ]
+  },
+  pampanga: {
+    petron: {
+      ron91: { price: 86.40, chg: '+0.47', dir: 'up' },
+      ron95: { price: 89.50, chg: '+0.47', dir: 'up' },
+      ron100:{ price: 99.75, chg: '+0.47', dir: 'up' },
+      dsl:   { price: 81.80, chg: '-9.57', dir: 'down' },
+      dslp:  { price: 85.05, chg: '-9.57', dir: 'down' },
+      kero:  { price: 81.10, chg: '-13.30',dir: 'down' },
+    },
+    shell: {
+      ron91: { price: 90.25, chg: '+0.47', dir: 'up' },
+      ron95: { price: 93.35, chg: '+0.47', dir: 'up' },
+      ron97: { price: 97.10, chg: '+0.47', dir: 'up' },
+      dsl:   { price: 87.68, chg: '-9.57', dir: 'down' },
+      dslp:  { price: 91.33, chg: '-9.57', dir: 'down' },
+      kero:  { price: 86.89, chg: '-13.30',dir: 'down' },
+    },
+    unioil: {
+      ron91: { price: 84.45, chg: '+0.47', dir: 'up' },
+      ron95: { price: 86.95, chg: '+0.47', dir: 'up' },
+      ron97: { price: 93.45, chg: '+0.47', dir: 'up' },
+      dsl:   { price: 77.15, chg: '-9.57', dir: 'down' },
+    },
+    h2h: [
+      { fuel:'RON 91',      petron:86.40, shell:90.25, unioil:84.45, winner:'unioil', save:'1.95' },
+      { fuel:'RON 95',      petron:89.50, shell:93.35, unioil:86.95, winner:'unioil', save:'2.55' },
+      { fuel:'Diesel std',  petron:81.80, shell:87.68, unioil:77.15, winner:'unioil', save:'4.65' },
+      { fuel:'Diesel prem', petron:85.05, shell:91.33, unioil:null,  winner:'petron', save:'6.28' },
+      { fuel:'RON 97/100',  petron:99.75, shell:97.10, unioil:93.45, winner:'unioil', save:'3.65' },
+    ]
+  }
+};
+
+function getRegionPrices() {
+  var key = (activeRegion === 'all') ? 'ncr' : activeRegion;
+  return REGION_BRAND_PRICES[key] || REGION_BRAND_PRICES.ncr;
+}
+
+function updateBrandCards() {
+  var rp = getRegionPrices();
+  var regionLabel = activeRegion === 'pampanga' ? 'Pampanga' : 'NCR';
+
+  // Update Petron prices (safe access)
+  var petron = rp.petron || {};
+  updateBrandRow('petron-gasul',   petron.ron91  || null);
+  updateBrandRow('petron-xcs',     petron.ron95  || null);
+  updateBrandRow('petron-blaze',   petron.ron100 || null);
+  updateBrandRow('petron-dmax',    petron.dsl    || null);
+  updateBrandRow('petron-turbo',   petron.dslp   || null);
+  updateBrandRow('petron-kero',    petron.kero   || null);
+
+  // Update Shell prices (safe access)
+  var shell = rp.shell || {};
+  updateBrandRow('shell-fsunl',    shell.ron91  || null);
+  updateBrandRow('shell-vpnitro',  shell.ron95  || null);
+  updateBrandRow('shell-vprace',   shell.ron97  || null);
+  updateBrandRow('shell-fsdsl',    shell.dsl    || null);
+  updateBrandRow('shell-vpdsl',    shell.dslp   || null);
+  updateBrandRow('shell-kero',     shell.kero   || null);
+
+  // Update Unioil prices (safe access)
+  var unioil = rp.unioil || {};
+  updateBrandRow('unioil-gas91',   unioil.ron91 || null);
+  updateBrandRow('unioil-prem95',  unioil.ron95 || null);
+  updateBrandRow('unioil-super97', unioil.ron97 || null);
+  updateBrandRow('unioil-dsl',     unioil.dsl   || null);
+
+  // Update region label in brand card subtitles
+  var labels = document.querySelectorAll('.brand-region-label');
+  labels.forEach(function(el) { el.textContent = regionLabel + ' prices'; });
+
+  // Update H2H table
+  updateH2HTable(rp.h2h);
+}
+
+function updateBrandRow(id, data) {
+  var priceEl = document.getElementById('price-' + id);
+  var chgEl   = document.getElementById('chg-' + id);
+  if (!data || data.price === null || data.price === undefined) {
+    if (priceEl) priceEl.style.opacity = '0.4';
+    return;
+  }
+  if (priceEl) { priceEl.style.opacity = '1'; priceEl.textContent = '₱' + data.price.toFixed(2); }
+  if (chgEl) {
+    var chgVal = Math.abs(parseFloat(data.chg)).toFixed(2);
+    chgEl.textContent = (data.dir === 'up' ? '▲ +₱' : '▼ −₱') + chgVal;
+    chgEl.className = 'bp-chg ' + data.dir;
+  }
+}
+
+function updateH2HTable(rows) {
+  var tbody = document.getElementById('h2h-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = rows.map(function(row) {
+    var cells = ['petron','shell','unioil'].map(function(brand) {
+      if (row[brand] === null) return '<td><span style="font-size:11px;color:var(--text3);">N/A</span></td>';
+      var isWinner = row.winner === brand;
+      return '<td>' + (isWinner
+        ? '<span class="h2h-winner">\u20b1' + row[brand].toFixed(2) + '</span>'
+        : '<span class="h2h-loser">\u20b1' + row[brand].toFixed(2) + '</span>')
+        + '</td>';
+    }).join('');
+    var winLabel = row.winner.charAt(0).toUpperCase() + row.winner.slice(1);
+    return '<tr><td>' + row.fuel + '</td>' + cells
+      + '<td><span class="h2h-save">' + winLabel + ' \u2212\u20b1' + row.save + '</span></td></tr>';
+  }).join('');
+}
+
 function switchRegion(region) {
   activeRegion = region;
   buildCityPriceGrid();
+  updateBrandCards();
 }
 
 function switchPowerRegion(region) {
@@ -1510,6 +1662,90 @@ function switchPowerRegion(region) {
   activePowerCity = 'All';
   buildCityTabs();
   buildInterruptionList();
+}
+
+
+/* Per-brand city price data */
+var CITY_PRICES_BRAND = {
+  petron: {
+    'Quezon City':  { r91:84.45, r95:87.55, dsl:79.90 },
+    'Pasig':        { r91:84.45, r95:87.55, dsl:79.90 },
+    'Manila':       { r91:84.45, r95:87.55, dsl:79.90 },
+    'Makati':       { r91:84.45, r95:87.55, dsl:79.90 },
+    'Caloocan':     { r91:84.45, r95:87.55, dsl:79.90 },
+    'Taguig':       { r91:84.45, r95:87.55, dsl:79.90 },
+    'Marikina':     { r91:84.45, r95:87.55, dsl:79.90 },
+    'Mandaluyong':  { r91:84.45, r95:87.55, dsl:79.90 },
+    'San Juan':     { r91:84.45, r95:87.55, dsl:79.90 },
+    'Paranaque':    { r91:84.45, r95:87.55, dsl:79.90 },
+    'Las Pinas':    { r91:84.45, r95:87.55, dsl:79.90 },
+    'Muntinlupa':   { r91:84.45, r95:87.55, dsl:79.90 },
+    'Valenzuela':   { r91:84.45, r95:87.55, dsl:79.90 },
+    'Malabon':      { r91:84.45, r95:87.55, dsl:79.90 },
+    'Navotas':      { r91:84.45, r95:87.55, dsl:79.90 },
+    'Pasay':        { r91:84.45, r95:87.55, dsl:79.90 },
+    'Pateros':      { r91:84.45, r95:87.55, dsl:79.90 },
+    'San Fernando': { r91:86.40, r95:89.50, dsl:81.80 },
+    'Angeles City': { r91:86.40, r95:89.50, dsl:81.80 },
+    'Mabalacat':    { r91:86.40, r95:89.50, dsl:81.80 },
+    'Clark (CSEZ)': { r91:null,  r95:null,  dsl:null   },
+  },
+  shell: {
+    'Quezon City':  { r91:87.35, r95:90.45, dsl:83.79 },
+    'Pasig':        { r91:87.35, r95:90.45, dsl:83.79 },
+    'Manila':       { r91:87.35, r95:90.45, dsl:83.79 },
+    'Makati':       { r91:87.35, r95:90.45, dsl:83.79 },
+    'Caloocan':     { r91:87.35, r95:90.45, dsl:83.79 },
+    'Taguig':       { r91:87.35, r95:90.45, dsl:83.79 },
+    'Marikina':     { r91:87.35, r95:90.45, dsl:83.79 },
+    'Mandaluyong':  { r91:87.35, r95:90.45, dsl:83.79 },
+    'San Juan':     { r91:87.35, r95:90.45, dsl:83.79 },
+    'Paranaque':    { r91:87.35, r95:90.45, dsl:83.79 },
+    'Las Pinas':    { r91:87.35, r95:90.45, dsl:83.79 },
+    'Muntinlupa':   { r91:87.35, r95:90.45, dsl:83.79 },
+    'Valenzuela':   { r91:87.35, r95:90.45, dsl:83.79 },
+    'Malabon':      { r91:87.35, r95:90.45, dsl:83.79 },
+    'Navotas':      { r91:87.35, r95:90.45, dsl:83.79 },
+    'Pasay':        { r91:87.35, r95:90.45, dsl:83.79 },
+    'Pateros':      { r91:87.35, r95:90.45, dsl:83.79 },
+    'San Fernando': { r91:90.25, r95:93.35, dsl:87.68 },
+    'Angeles City': { r91:90.25, r95:93.35, dsl:87.68 },
+    'Mabalacat':    { r91:90.25, r95:93.35, dsl:87.68 },
+    'Clark (CSEZ)': { r91:90.25, r95:93.35, dsl:87.68 },
+  },
+  unioil: {
+    'Quezon City':  { r91:83.49, r95:85.99, dsl:76.19 },
+    'Pasig':        { r91:83.49, r95:85.99, dsl:76.19 },
+    'Manila':       { r91:83.49, r95:85.99, dsl:76.19 },
+    'Makati':       { r91:83.49, r95:85.99, dsl:76.19 },
+    'Caloocan':     { r91:83.49, r95:85.99, dsl:76.19 },
+    'Taguig':       { r91:83.49, r95:85.99, dsl:76.19 },
+    'Marikina':     { r91:83.49, r95:85.99, dsl:76.19 },
+    'Mandaluyong':  { r91:83.49, r95:85.99, dsl:76.19 },
+    'San Juan':     { r91:83.49, r95:85.99, dsl:76.19 },
+    'Paranaque':    { r91:83.49, r95:85.99, dsl:76.19 },
+    'Las Pinas':    { r91:83.49, r95:85.99, dsl:76.19 },
+    'Muntinlupa':   { r91:83.49, r95:85.99, dsl:76.19 },
+    'Valenzuela':   { r91:83.49, r95:85.99, dsl:76.19 },
+    'Malabon':      { r91:83.49, r95:85.99, dsl:76.19 },
+    'Navotas':      { r91:83.49, r95:85.99, dsl:76.19 },
+    'Pasay':        { r91:83.49, r95:85.99, dsl:76.19 },
+    'Pateros':      { r91:83.49, r95:85.99, dsl:76.19 },
+    // Unioil confirmed stations: McArthur Hwy Angeles, Sindalan San Fernando, Clark Freeport Zone
+    'San Fernando': { r91:84.45, r95:86.95, dsl:77.15 },
+    'Angeles City': { r91:84.45, r95:86.95, dsl:77.15 },
+    'Mabalacat':    { r91:null,  r95:null,   dsl:null   }, // no Unioil station confirmed
+    'Clark (CSEZ)': { r91:84.45, r95:86.95, dsl:77.15 },
+  },
+};
+
+var activeBrand = 'avg';
+var BRAND_COLORS = { petron:'#0057a8', shell:'#dd1d21', unioil:'#E65100', avg:'#1a1917' };
+var BRAND_LABELS = { petron:'Petron', shell:'Shell', unioil:'Unioil', avg:'All brands (avg)' };
+
+function switchBrand(brand) {
+  activeBrand = brand;
+  buildCityPriceGrid();
 }
 
 /* City-by-City Fuel Prices */
@@ -1554,34 +1790,78 @@ function buildCityPriceGrid() {
   if (!grid) return;
   grid.innerHTML = '';
   var avg = NCR_AVG[activeCityFuel];
-  var allCities = Object.keys(CITY_PRICES);
+  var isBrandMode = activeBrand !== 'avg';
+  var allCities = (isBrandMode && CITY_PRICES_BRAND[activeBrand]) ? Object.keys(CITY_PRICES_BRAND[activeBrand]) : Object.keys(CITY_PRICES);
+
   // Filter by region
   var cities = allCities.filter(function(c) {
     if (activeRegion === 'ncr') return NCR_CITIES_LIST.indexOf(c) !== -1;
     if (activeRegion === 'pampanga') return PAMPANGA_CITIES_LIST.indexOf(c) !== -1;
-    return true; // 'all'
+    return true;
   });
-  // Sort by average price ascending
-  cities.sort(function(a,b){ return CITY_PRICES[a][activeCityFuel].avg - CITY_PRICES[b][activeCityFuel].avg; });
+
+  // For brand mode, filter out cities with no station (null price)
+  if (isBrandMode) {
+    cities = cities.filter(function(c) {
+      if (!CITY_PRICES_BRAND[activeBrand]) return false;
+      var d = CITY_PRICES_BRAND[activeBrand][c];
+      return d && d[activeCityFuel] !== null && d[activeCityFuel] !== undefined;
+    });
+  }
+
+  if (cities.length === 0) {
+    grid.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:16px;text-align:center;background:var(--surface2);border-radius:10px;grid-column:1/-1;">No ' + BRAND_LABELS[activeBrand] + ' stations found in this region.</div>';
+    return;
+  }
+
+  // Sort by price ascending
+  cities.sort(function(a, b) {
+    var getP = function(c) {
+      if (isBrandMode) {
+        var bd = CITY_PRICES_BRAND[activeBrand] ? CITY_PRICES_BRAND[activeBrand][c] : null;
+        return (bd && bd[activeCityFuel] != null) ? bd[activeCityFuel] : 9999;
+      }
+      return (CITY_PRICES[c] && CITY_PRICES[c][activeCityFuel]) ? CITY_PRICES[c][activeCityFuel].avg : 9999;
+    };
+    return getP(a) - getP(b);
+  });
+
+  var brandColor = BRAND_COLORS[activeBrand];
 
   cities.forEach(function(city, idx) {
-    var d = CITY_PRICES[city][activeCityFuel];
-    var diff = d.avg - avg;
-    var isCheap = diff <= 0;
+    // Safe price lookup
+    var brandData = isBrandMode && CITY_PRICES_BRAND[activeBrand] ? CITY_PRICES_BRAND[activeBrand][city] : null;
+    var price = isBrandMode
+      ? (brandData && brandData[activeCityFuel] != null ? brandData[activeCityFuel] : null)
+      : (CITY_PRICES[city] && CITY_PRICES[city][activeCityFuel] ? CITY_PRICES[city][activeCityFuel].avg : null);
+    if (price === null || price === undefined) return;
+    var d = CITY_PRICES[city] ? CITY_PRICES[city][activeCityFuel] : null;
+    var diff = price - avg;
     var isFirst = idx === 0;
+
     var card = document.createElement('div');
-    card.style.cssText = 'background:' + (isFirst ? '#e6f5ed' : 'var(--surface2)') + ';border-radius:var(--radius-sm);padding:10px 12px;border:1px solid ' + (isFirst ? 'rgba(26,122,82,.2)' : 'var(--border)') + ';cursor:default;';
+    var cardBg = isFirst ? '#e6f5ed' : 'var(--surface2)';
+    var cardBorder = isFirst ? 'rgba(26,122,82,.2)' : 'var(--border)';
+    card.style.cssText = 'background:' + cardBg + ';border-radius:var(--radius-sm);padding:10px 12px;border:1px solid ' + cardBorder + ';';
 
-    var diffText = diff === 0 ? 'NCR avg' : (diff > 0 ? '+₱' + diff.toFixed(2) : '-₱' + Math.abs(diff).toFixed(2));
+    var diffText = Math.abs(diff) < 0.05 ? 'NCR avg' : (diff > 0 ? '+\u20b1' + diff.toFixed(2) : '\u2212\u20b1' + Math.abs(diff).toFixed(2));
     var diffColor = diff > 0.3 ? '#b83232' : diff < -0.3 ? '#1a7a52' : '#888780';
+    var brandColor = BRAND_COLORS[activeBrand] || '#1a1917';
+    var priceColor = isBrandMode ? brandColor : 'var(--text)';
 
-    card.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+    var topBadge = isFirst ? '<span style="font-size:9px;font-weight:600;background:#1a7a52;color:#fff;padding:1px 5px;border-radius:3px;">CHEAPEST</span>' : '';
+    var subLine = isBrandMode
+      ? '<span style="font-size:10px;color:var(--text3);">Official SRP &middot; ' + BRAND_LABELS[activeBrand] + '</span>'
+      : (d ? '<span style="font-size:10px;color:var(--text3);">Lo: \u20b1' + d.lo.toFixed(2) + ' (' + d.cheapest + ')</span>' : '');
+
+    card.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
       + '<span style="font-size:12px;font-weight:600;color:var(--text);">' + city + '</span>'
-      + (isFirst ? '<span style="font-size:9px;font-weight:600;background:#1a7a52;color:#fff;padding:1px 5px;border-radius:3px;">CHEAPEST</span>' : '')
+      + topBadge
       + '</div>'
-      + '<div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;letter-spacing:-0.5px;color:var(--text);">&#8369;' + d.avg.toFixed(2) + '</div>'
+      + '<div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;letter-spacing:-0.5px;color:' + priceColor + ';">\u20b1' + price.toFixed(2) + '</div>'
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">'
-      + '<span style="font-size:10px;color:var(--text3);">Lo: &#8369;' + d.lo.toFixed(2) + ' (' + d.cheapest + ')</span>'
+      + subLine
       + '<span style="font-size:11px;font-weight:500;color:' + diffColor + ';">' + diffText + '</span>'
       + '</div>';
 
@@ -1589,8 +1869,13 @@ function buildCityPriceGrid() {
   });
 }
 
-buildCityPriceGrid();
-
+/* ── Bootstrap — all data and functions are defined above this point ── */
+document.addEventListener('DOMContentLoaded', function() {
+  init();
+  updateBrandCards();
+  initPower();
+  buildCityPriceGrid();
+});
 </script>
 </body>
 </html>
