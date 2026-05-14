@@ -105,38 +105,40 @@ async function handleChat(apiKey, system, messages, res) {
 async function handleFuel(apiKey, res) {
   const today = phDate();
 
-const prompt =
+async function handleFuel(apiKey, res) {
+  const today = phDate();
+
+  const prompt =
 `Today is ${today} (Philippine time).
 
 Your task: Search the web for current Philippine fuel prices and return them as JSON.
 
-Step 1 — Search these specific sources and use ONLY data from May 11–15, 2026:
-• fuelprice.ph  (official pump price monitor)
-• gaswatchph.com (consumer price tracker)
-• DOE Oil Monitor (Department of Energy)
+Step 1 — Search these specific sources and use ONLY data from May 11-15, 2026:
+• fuelprice.ph
+• gaswatchph.com
+• DOE Oil Monitor
 
 Step 2 — Find:
-1. The latest DOE weekly adjustment amounts (e.g., "+0.20" or "-0.10") for gasoline, diesel, kerosene, and LPG.
+1. The latest DOE weekly adjustment amounts for gasoline, diesel, kerosene, and LPG.
 2. The ACTUAL CURRENT PUMP PRICES at Petron, Shell, and Unioil in Metro Manila NCR.
    - Do NOT use DOE SRP baseline prices.
    - Do NOT use prices from news articles dated before May 11, 2026.
-   - If a source lists a range, use the mid-point or the NCR average.
 
-Step 3 — Sanity check: As of May 2026, real Philippine pump prices are roughly ₱80–₱95/L for RON 91 and ₱75–₱90/L for diesel. If your search returns prices outside ₱60–₱120, you have outdated data — search again or mark as unavailable.
+Step 3 — Sanity check: As of May 2026, real Philippine pump prices are roughly ₱80-₱95/L for RON 91 and ₱75-₱90/L for diesel. If your search returns prices outside ₱60-₱120, mark them as null.
 
 Step 4 — Respond with ONLY a JSON object. No markdown fences. No explanation text outside the JSON. Start with { and end with }.
 
-Use this exact structure. Replace every null with the real value. If a value is truly unavailable after searching, use null (not a guess).
+Use this exact structure. Replace every null with the real value. If unavailable, use null.
 
 {
   "effective_date": "May 15, 2026",
   "week_label": "Week of May 12-18, 2026",
   "doe_adjustment": {
-    "gasoline_ron91_95": "+0.00",
-    "diesel_std": "+0.00",
-    "kerosene": "+0.00",
-    "lpg_per_kg": "+0.00",
-    "note": "Brief context for this week's adjustment"
+    "gasoline_ron91_95": null,
+    "diesel_std": null,
+    "kerosene": null,
+    "lpg_per_kg": null,
+    "note": null
   },
   "prices": {
     "petron": {
@@ -161,10 +163,10 @@ Use this exact structure. Replace every null with the real value. If a value is 
       "diesel_std": null
     }
   },
-  "trend_context": "1-2 sentences on recent trend",
-  "next_week_signal": "Brief note on next Tuesday expectation",
-  "fill_up_advice": "Practical 1-2 sentence advice for Filipino motorists",
-  "sources": ["https://fuelprice.ph", "https://gaswatchph.com"]
+  "trend_context": null,
+  "next_week_signal": null,
+  "fill_up_advice": null,
+  "sources": []
 }`;
 
   const raw = await searchCompletion(apiKey, prompt);
@@ -178,12 +180,10 @@ Use this exact structure. Replace every null with the real value. If a value is 
   // ── Sanity check: reject obviously wrong prices ──
   const r91 = json.prices?.petron?.ron91;
   if (r91 !== undefined && r91 !== null) {
-    // May 2026 realistic range after the Iran spike and subsequent rollback
     if (r91 < 75 || r91 > 115) {
-      console.error(`[chat.js] Fuel sanity FAIL: petron ron91=${r91} is out of realistic range ₱75-₱115. Rejecting.`);
+      console.error(`[chat.js] Fuel sanity FAIL: petron ron91=${r91} is out of realistic range ₱75-₱115.`);
       return res.status(500).json({
-        error: `Sanity check failed: Petron RON 91 = ₱${r91} is outside the realistic range ₱75–₱115. ` +
-               "The model may have returned outdated or hallucinated data.",
+        error: `Sanity check failed: Petron RON 91 = ₱${r91} is outside the realistic range ₱75–₱115.`,
         debug_raw: JSON.stringify(json).slice(0, 500)
       });
     }
@@ -193,8 +193,6 @@ Use this exact structure. Replace every null with the real value. If a value is 
   return res.status(200).json(json);
 }
 
-  return res.status(200).json(json);
-}
 
 // ─────────────────────────────────────────────────────────────
 // POWER — latest Meralco/NGCP interruptions via web search
