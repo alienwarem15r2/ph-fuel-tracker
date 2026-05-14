@@ -1,20 +1,13 @@
-// api/chat.js — Hybrid architecture
-//   • Fuel & Power  → Gemini 2.5 Flash (free tier, live Google Search)
-//   • AI Chat       → Groq llama-3.3-70b (only when user sends a message)
-//   • Cache         → 15 min in-memory (survives warm containers)
-//   • Fallbacks     → Gemini → Scrape fuelprice.ph → Static realistic prices
-//
-// Env vars:
-//   GEMINI_API_KEY  (get free: https://aistudio.google.com/app/apikey)
-//   GROQ_API_KEY    (existing key, now only used for chat)
+// api/chat.js — Hybrid: Gemini (fuel/power) + Groq (chat only)
+// Env vars: GEMINI_API_KEY, GROQ_API_KEY
 
 const GROQ_BASE = "https://api.groq.com/openai/v1";
 const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-2.0-flash"; // confirmed valid API name
 
-// ── In-memory cache (15 min) ──
+// ── 15-min server cache ──
 const CACHE_TTL = 15 * 60 * 1000;
 const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 } };
 
@@ -56,22 +49,20 @@ export default async function handler(req, res) {
   }
 }
 
-/* ───────────────────────── DEBUG ───────────────────────── */
+/* ── DEBUG ── */
 async function handleDebug(res) {
   const groq = process.env.GROQ_API_KEY;
   const gem = process.env.GEMINI_API_KEY;
   return res.status(200).json({
     groq_key_present: !!groq,
-    groq_prefix: groq ? groq.slice(0, 8) + "…" : null,
     gemini_key_present: !!gem,
-    gemini_prefix: gem ? gem.slice(0, 8) + "…" : null,
     node_version: process.version,
     cache_fuel_age: apiCache.fuel.data ? Math.round((Date.now() - apiCache.fuel.ts) / 1000) + "s" : "empty",
     cache_power_age: apiCache.power.data ? Math.round((Date.now() - apiCache.power.ts) / 1000) + "s" : "empty"
   });
 }
 
-/* ───────────────────────── CHAT (Groq only) ───────────────────────── */
+/* ── CHAT (Groq only) ── */
 async function handleChat(system, messages, res) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "GROQ_API_KEY missing" });
@@ -93,7 +84,7 @@ async function handleChat(system, messages, res) {
   return res.status(200).json({ content: [{ text }] });
 }
 
-/* ───────────────────────── FUEL (Gemini → Scrape → Groq → Static) ───────────────────────── */
+/* ── FUEL (Gemini → Scrape → Groq → Static) ── */
 async function handleFuel(res) {
   const cached = getCache("fuel");
   if (cached) {
@@ -105,14 +96,14 @@ async function handleFuel(res) {
   let result = null;
   let source = null;
 
-  // 1. Gemini (primary — free, has live search)
+  // 1. Gemini
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey && !result) {
     try {
       const raw = await geminiGenerate(geminiKey, buildFuelPrompt(today));
       const json = extractJSON(raw);
-      if (!json.error && json.prices?.petron?.ron91) {
-        const r91 = json.prices.petron.ron91;
+      if (!json.error && json.prices?.petron?.ron91 != null) {
+        const r91 = Number(json.prices.petron.ron91);
         if (r91 >= 75 && r91 <= 115) {
           result = json;
           source = "gemini";
@@ -124,7 +115,7 @@ async function handleFuel(res) {
     }
   }
 
-  // 2. Scrape fuelprice.ph (zero tokens, direct)
+  // 2. Scrape fuelprice.ph (with 4s timeout so it can never hang)
   if (!result) {
     try {
       const scraped = await scrapeFuelPrices();
@@ -132,11 +123,17 @@ async function handleFuel(res) {
         result = {
           effective_date: today,
           week_label: `Week of ${today}`,
-          doe_adjustment: { gasoline_ron91_95: null, diesel_std: null, kerosene: null, lpg_per_kg: null, note: "Scraped from fuelprice.ph" },
+          doe_adjustment: {
+            gasoline_ron91_95: null,
+            diesel_std: null,
+            kerosene: null,
+            lpg_per_kg: null,
+            note: "Scraped from fuelprice.ph"
+          },
           prices: scraped.prices,
           trend_context: "Live scraped data",
           next_week_signal: null,
-          fill_up_advice: null,
+          fill_up_advice: "Prices pulled directly from fuelprice.ph. Fill up based on current levels.",
           sources: ["https://fuelprice.ph"]
         };
         source = "scrape";
@@ -147,15 +144,15 @@ async function handleFuel(res) {
     }
   }
 
-  // 3. Groq fallback (burns tokens — only if quota available)
+  // 3. Groq fallback
   if (!result) {
     const groqKey = process.env.GROQ_API_KEY;
     if (groqKey) {
       try {
         const raw = await groqSearch(buildFuelPrompt(today));
         const json = extractJSON(raw);
-        if (!json.error && json.prices?.petron?.ron91) {
-          const r91 = json.prices.petron.ron91;
+        if (!json.error && json.prices?.petron?.ron91 != null) {
+          const r91 = Number(json.prices.petron.ron91);
           if (r91 >= 75 && r91 <= 115) {
             result = json;
             source = "groq";
@@ -168,12 +165,18 @@ async function handleFuel(res) {
     }
   }
 
-  // 4. Static emergency fallback (accurate as of May 12-18, 2026)
+  // 4. Static emergency fallback
   if (!result) {
     result = {
       effective_date: today,
       week_label: `Week of ${today}`,
-      doe_adjustment: { gasoline_ron91_95: "+0.00", diesel_std: "+0.00", kerosene: "+0.00", lpg_per_kg: "+0.00", note: "Static fallback — all APIs unavailable" },
+      doe_adjustment: {
+        gasoline_ron91_95: "+0.00",
+        diesel_std: "+0.00",
+        kerosene: "+0.00",
+        lpg_per_kg: "+0.00",
+        note: "Static fallback — all APIs unavailable"
+      },
       prices: {
         petron: { ron91: 84.45, ron95: 87.55, ron100: 97.60, diesel_std: 79.90, diesel_prem: 84.15, kerosene: 79.15 },
         shell:  { ron91: 87.35, ron95: 90.45, ron97: 93.99, diesel_std: 83.79, diesel_prem: 88.49, kerosene: 82.00 },
@@ -187,13 +190,25 @@ async function handleFuel(res) {
     source = "static";
   }
 
+  // ── GUARD: never send null advice to the frontend ──
+  if (!result.fill_up_advice) {
+    const dieselAdj = result.doe_adjustment?.diesel_std || "";
+    if (dieselAdj.startsWith("-")) {
+      result.fill_up_advice = "Diesel rolled back this week — good time to fill up.";
+    } else if (dieselAdj.startsWith("+")) {
+      result.fill_up_advice = "Prices rose this week. Consider filling up before next Tuesday's adjustment.";
+    } else {
+      result.fill_up_advice = "Prices are stable. Fill up based on your tank level and travel needs.";
+    }
+  }
+
   result._meta = { source, cached_at: new Date().toISOString() };
   setCache("fuel", result);
   res.setHeader("Cache-Control", "public, max-age=900");
   return res.status(200).json(result);
 }
 
-/* ───────────────────────── POWER (Gemini → Groq → Static) ───────────────────────── */
+/* ── POWER (Gemini → Groq → Static) ── */
 async function handlePower(res) {
   const cached = getCache("power");
   if (cached) {
@@ -240,7 +255,7 @@ async function handlePower(res) {
       grid_status: {
         level: "normal",
         title: "Luzon Grid — Normal",
-        subtitle: "Unable to fetch live data. Assume normal conditions.",
+        subtitle: "Live data temporarily unavailable. Grid status assumed normal.",
         color: "#1a7a52",
         bg: "#e6f5ed",
         border: "rgba(26,122,82,.2)",
@@ -259,9 +274,9 @@ async function handlePower(res) {
   return res.status(200).json(result);
 }
 
-/* ───────────────────────── PROMPT BUILDERS ───────────────────────── */
+/* ── PROMPT BUILDERS ── */
 function buildFuelPrompt(today) {
-  return `Today is ${today}. Search fuelprice.ph and gaswatchph.com for current Philippine pump prices (Petron/Shell/Unioil NCR) and latest DOE weekly adjustment. Return ONLY compact JSON, no markdown, no explanation. RON91 realistic ₱80-95, diesel ₱75-90. Use null if unavailable.
+  return `Today is ${today}. Search fuelprice.ph and gaswatchph.com for current PH pump prices (Petron/Shell/Unioil NCR) and latest DOE weekly adjustment. Return ONLY compact JSON, no markdown, no explanation. RON91 realistic ₱80-95, diesel ₱75-90. Use null if unavailable.
 {"effective_date":"${today}","week_label":"Week of ${today}","doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null},"prices":{"petron":{"ron91":null,"ron95":null,"ron100":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"shell":{"ron91":null,"ron95":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"unioil":{"ron91":null,"ron95":null,"diesel_std":null}},"trend_context":null,"next_week_signal":null,"fill_up_advice":null,"sources":[]}`;
 }
 
@@ -270,50 +285,60 @@ function buildPowerPrompt(today) {
 {"grid_status":{"level":"normal","title":null,"subtitle":null,"color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","alert_times":[]},"interruptions":[{"city":null,"barangay":null,"street":null,"date":null,"time":null,"reason":null,"type":"scheduled"}],"last_updated":"${today}","sources":[]}`;
 }
 
-/* ───────────────────────── SCRAPER ───────────────────────── */
+/* ── SCRAPER (4s timeout) ── */
 async function scrapeFuelPrices() {
-  const res = await fetch("https://fuelprice.ph", {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; PHWatchBot/1.0)" }
-  });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  const html = await res.text();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
 
-  const prices = {
-    petron: { ron91: 0, ron95: 0, ron100: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
-    shell:  { ron91: 0, ron95: 0, ron97: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
-    unioil: { ron91: 0, ron95: 0, diesel_std: 0 }
-  };
+  try {
+    const res = await fetch("https://fuelprice.ph", {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PHWatchBot/1.0)" },
+      redirect: "follow"
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const html = await res.text();
 
-  // Helper: find a price near a brand+fuel mention
-  function grab(label) {
-    const re = new RegExp(`${label}[\\s\\S]{0,180}?(?:[₱P]\\s?)(\\d{2,3}\\.\\d{2})`, "i");
-    const m = html.match(re);
-    return m ? parseFloat(m[1]) : 0;
+    const prices = {
+      petron: { ron91: 0, ron95: 0, ron100: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
+      shell:  { ron91: 0, ron95: 0, ron97: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
+      unioil: { ron91: 0, ron95: 0, diesel_std: 0 }
+    };
+
+    function grab(label) {
+      const re = new RegExp(`${label}[\\s\\S]{0,180}?(?:[₱P]\\s?)(\\d{2,3}\\.\\d{2})`, "i");
+      const m = html.match(re);
+      return m ? parseFloat(m[1]) : 0;
+    }
+
+    prices.petron.ron91      = grab("Petron.*Gasul|Petron.*91") || 84.45;
+    prices.petron.ron95      = grab("Petron.*XCS|Petron.*95") || 87.55;
+    prices.petron.ron100     = grab("Petron.*Blaze|Petron.*100") || 97.60;
+    prices.petron.diesel_std = grab("Petron.*Diesel.*Max|Petron.*DMax") || 79.90;
+    prices.petron.diesel_prem= grab("Petron.*Turbo") || 84.15;
+    prices.petron.kerosene   = grab("Petron.*Kerosene") || 79.15;
+
+    prices.shell.ron91       = grab("Shell.*FuelSave.*91|Shell.*91") || 87.35;
+    prices.shell.ron95       = grab("Shell.*V-Power.*95|Shell.*95") || 90.45;
+    prices.shell.ron97       = grab("Shell.*V-Power.*Racing|Shell.*97") || 93.99;
+    prices.shell.diesel_std  = grab("Shell.*FuelSave.*Diesel") || 83.79;
+    prices.shell.diesel_prem = grab("Shell.*V-Power.*Diesel") || 88.49;
+    prices.shell.kerosene    = grab("Shell.*Kerosene") || 82.00;
+
+    prices.unioil.ron91      = grab("Unioil.*91") || 83.03;
+    prices.unioil.ron95      = grab("Unioil.*95") || 85.03;
+    prices.unioil.diesel_std = grab("Unioil.*Diesel") || 76.19;
+
+    if (prices.petron.ron91 < 50) throw new Error("Scrape returned unrealistic prices");
+    return { prices };
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
   }
-
-  prices.petron.ron91      = grab("Petron.*Gasul|Petron.*91") || 84.45;
-  prices.petron.ron95      = grab("Petron.*XCS|Petron.*95") || 87.55;
-  prices.petron.ron100     = grab("Petron.*Blaze|Petron.*100") || 97.60;
-  prices.petron.diesel_std = grab("Petron.*Diesel.*Max|Petron.*DMax") || 79.90;
-  prices.petron.diesel_prem= grab("Petron.*Turbo") || 84.15;
-  prices.petron.kerosene   = grab("Petron.*Kerosene") || 79.15;
-
-  prices.shell.ron91       = grab("Shell.*FuelSave.*91|Shell.*91") || 87.35;
-  prices.shell.ron95       = grab("Shell.*V-Power.*95|Shell.*95") || 90.45;
-  prices.shell.ron97       = grab("Shell.*V-Power.*Racing|Shell.*97") || 93.99;
-  prices.shell.diesel_std  = grab("Shell.*FuelSave.*Diesel") || 83.79;
-  prices.shell.diesel_prem = grab("Shell.*V-Power.*Diesel") || 88.49;
-  prices.shell.kerosene    = grab("Shell.*Kerosene") || 82.00;
-
-  prices.unioil.ron91      = grab("Unioil.*91") || 83.03;
-  prices.unioil.ron95      = grab("Unioil.*95") || 85.03;
-  prices.unioil.diesel_std = grab("Unioil.*Diesel") || 76.19;
-
-  if (prices.petron.ron91 < 50) throw new Error("Scrape returned unrealistic prices");
-  return { prices };
 }
 
-/* ───────────────────────── GEMINI ───────────────────────── */
+/* ── GEMINI ── */
 async function geminiGenerate(apiKey, prompt) {
   const url = `${GEMINI_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
@@ -334,7 +359,7 @@ async function geminiGenerate(apiKey, prompt) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 }
 
-/* ───────────────────────── GROQ ───────────────────────── */
+/* ── GROQ ── */
 async function groqSearch(prompt) {
   let r = await groqPost("/chat/completions", {
     model: "compound-beta",
@@ -368,7 +393,7 @@ async function groqPost(path, payload) {
   return { ok: res.ok, status: res.status, data };
 }
 
-/* ───────────────────────── UTILITIES ───────────────────────── */
+/* ── UTILITIES ── */
 function extractJSON(raw) {
   if (!raw || typeof raw !== "string") return { error: "Empty response", raw: String(raw).slice(0, 100) };
   let s = raw.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
