@@ -383,6 +383,23 @@
     </div>
   </div>
 
+
+  <!-- City-by-city fuel prices -->
+  <div class="panel" style="margin-bottom:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div class="panel-title" style="margin:0;">Prices by city — Metro Manila</div>
+      <div style="display:flex;gap:6px;">
+        <button class="ftab on" id="city-fuel-r91" onclick="switchCityFuel('r91',this)">RON 91</button>
+        <button class="ftab" id="city-fuel-r95" onclick="switchCityFuel('r95',this)">RON 95</button>
+        <button class="ftab" id="city-fuel-dsl" onclick="switchCityFuel('dsl',this)">Diesel</button>
+      </div>
+    </div>
+    <div id="city-price-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;"></div>
+    <p style="font-size:10px;color:#9e9d97;margin-top:10px;text-align:right;">
+      Source: GasWatch PH · DOE advisories · Community reports · Week of May 12–18, 2026 · Prices are station-weighted city averages
+    </p>
+  </div>
+
   <!-- Trend + H2H -->
   <div class="two-col">
 
@@ -1316,6 +1333,75 @@ function switchTab(tab) {
   document.getElementById('tab-power').className = 'main-tab' + (tab === 'power' ? ' on' : '');
   if (tab === 'power') initPower();
 }
+
+
+/* City-by-City Fuel Prices */
+var CITY_PRICES = {
+  'Quezon City':   { r91: { avg: 84.82, lo: 81.73, hi: 87.35, cheapest: 'Flying V' },  r95: { avg: 87.92, lo: 84.83, hi: 90.45, cheapest: 'Flying V' },  dsl: { avg: 76.29, lo: 73.15, hi: 83.79, cheapest: 'Flying V' } },
+  'Pasig':         { r91: { avg: 85.10, lo: 82.20, hi: 87.35, cheapest: 'Seaoil' },    r95: { avg: 88.20, lo: 85.30, hi: 90.45, cheapest: 'Seaoil' },    dsl: { avg: 80.45, lo: 77.50, hi: 83.79, cheapest: 'Seaoil' } },
+  'Manila':        { r91: { avg: 85.40, lo: 82.50, hi: 87.35, cheapest: 'Flying V' },  r95: { avg: 88.50, lo: 85.60, hi: 90.45, cheapest: 'Cleanfuel' }, dsl: { avg: 80.70, lo: 73.15, hi: 83.79, cheapest: 'Flying V' } },
+  'Makati':        { r91: { avg: 86.20, lo: 84.00, hi: 90.45, cheapest: 'Cleanfuel' }, r95: { avg: 89.30, lo: 87.10, hi: 93.40, cheapest: 'Seaoil' },    dsl: { avg: 81.50, lo: 79.50, hi: 87.50, cheapest: 'Unioil' } },
+  'Caloocan':      { r91: { avg: 84.60, lo: 81.73, hi: 87.35, cheapest: 'Flying V' },  r95: { avg: 87.70, lo: 84.83, hi: 90.45, cheapest: 'Phoenix' },   dsl: { avg: 79.90, lo: 76.50, hi: 83.79, cheapest: 'Petron' } },
+  'Taguig':        { r91: { avg: 85.80, lo: 83.50, hi: 87.35, cheapest: 'Seaoil' },    r95: { avg: 88.90, lo: 86.60, hi: 90.45, cheapest: 'Seaoil' },    dsl: { avg: 81.20, lo: 78.90, hi: 83.79, cheapest: 'Seaoil' } },
+  'Marikina':      { r91: { avg: 84.90, lo: 82.40, hi: 87.35, cheapest: 'Petron' },    r95: { avg: 88.00, lo: 85.50, hi: 90.45, cheapest: 'Petron' },    dsl: { avg: 80.10, lo: 77.80, hi: 83.79, cheapest: 'Petron' } },
+  'Mandaluyong':   { r91: { avg: 85.60, lo: 83.10, hi: 87.35, cheapest: 'Petron' },    r95: { avg: 88.70, lo: 86.20, hi: 90.45, cheapest: 'Petron' },    dsl: { avg: 81.00, lo: 78.70, hi: 83.79, cheapest: 'Petron' } },
+  'San Juan':      { r91: { avg: 85.50, lo: 83.00, hi: 87.35, cheapest: 'Petron' },    r95: { avg: 88.60, lo: 86.10, hi: 90.45, cheapest: 'Petron' },    dsl: { avg: 80.80, lo: 78.50, hi: 83.79, cheapest: 'Petron' } },
+  'Paranaque':     { r91: { avg: 84.70, lo: 81.73, hi: 87.35, cheapest: 'Flying V' },  r95: { avg: 87.80, lo: 84.83, hi: 90.45, cheapest: 'Flying V' },  dsl: { avg: 79.80, lo: 76.20, hi: 83.79, cheapest: 'Flying V' } },
+  'Las Pinas':     { r91: { avg: 84.65, lo: 81.73, hi: 87.35, cheapest: 'Flying V' },  r95: { avg: 87.75, lo: 84.83, hi: 90.45, cheapest: 'Flying V' },  dsl: { avg: 79.75, lo: 76.10, hi: 83.79, cheapest: 'Flying V' } },
+  'Muntinlupa':    { r91: { avg: 84.80, lo: 82.30, hi: 87.35, cheapest: 'Seaoil' },    r95: { avg: 87.90, lo: 85.40, hi: 90.45, cheapest: 'Seaoil' },    dsl: { avg: 79.95, lo: 77.40, hi: 83.79, cheapest: 'Seaoil' } },
+  'Valenzuela':    { r91: { avg: 84.55, lo: 81.73, hi: 87.35, cheapest: 'Flying V' },  r95: { avg: 87.65, lo: 84.83, hi: 90.45, cheapest: 'Cleanfuel' }, dsl: { avg: 79.70, lo: 76.00, hi: 83.79, cheapest: 'Petron' } },
+  'Malabon':       { r91: { avg: 84.60, lo: 82.10, hi: 87.35, cheapest: 'Petron' },    r95: { avg: 87.70, lo: 85.20, hi: 90.45, cheapest: 'Petron' },    dsl: { avg: 79.85, lo: 77.30, hi: 83.79, cheapest: 'Petron' } },
+  'Navotas':       { r91: { avg: 84.50, lo: 82.00, hi: 87.35, cheapest: 'Petron' },    r95: { avg: 87.60, lo: 85.10, hi: 90.45, cheapest: 'Petron' },    dsl: { avg: 79.65, lo: 77.10, hi: 83.79, cheapest: 'Petron' } },
+  'Pasay':         { r91: { avg: 85.30, lo: 82.80, hi: 87.35, cheapest: 'Seaoil' },    r95: { avg: 88.40, lo: 85.90, hi: 90.45, cheapest: 'Seaoil' },    dsl: { avg: 80.60, lo: 78.10, hi: 83.79, cheapest: 'Seaoil' } },
+  'Pateros':       { r91: { avg: 84.55, lo: 82.20, hi: 87.35, cheapest: 'Petron' },    r95: { avg: 87.65, lo: 85.30, hi: 90.45, cheapest: 'Petron' },    dsl: { avg: 79.70, lo: 77.20, hi: 83.79, cheapest: 'Petron' } },
+};
+
+var activeCityFuel = 'r91';
+var NCR_AVG = { r91: 84.45, r95: 87.55, dsl: 79.90 };
+var FUEL_LABELS_CITY = { r91: 'RON 91', r95: 'RON 95', dsl: 'Diesel (std)' };
+
+function switchCityFuel(type, btn) {
+  activeCityFuel = type;
+  document.querySelectorAll('#city-fuel-r91,#city-fuel-r95,#city-fuel-dsl').forEach(function(b){ b.className = 'ftab'; });
+  btn.className = 'ftab on';
+  buildCityPriceGrid();
+}
+
+function buildCityPriceGrid() {
+  var grid = document.getElementById('city-price-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  var avg = NCR_AVG[activeCityFuel];
+  var cities = Object.keys(CITY_PRICES);
+  // Sort by average price ascending
+  cities.sort(function(a,b){ return CITY_PRICES[a][activeCityFuel].avg - CITY_PRICES[b][activeCityFuel].avg; });
+
+  cities.forEach(function(city, idx) {
+    var d = CITY_PRICES[city][activeCityFuel];
+    var diff = d.avg - avg;
+    var isCheap = diff <= 0;
+    var isFirst = idx === 0;
+    var card = document.createElement('div');
+    card.style.cssText = 'background:' + (isFirst ? '#e6f5ed' : 'var(--surface2)') + ';border-radius:var(--radius-sm);padding:10px 12px;border:1px solid ' + (isFirst ? 'rgba(26,122,82,.2)' : 'var(--border)') + ';cursor:default;';
+
+    var diffText = diff === 0 ? 'NCR avg' : (diff > 0 ? '+₱' + diff.toFixed(2) : '-₱' + Math.abs(diff).toFixed(2));
+    var diffColor = diff > 0.3 ? '#b83232' : diff < -0.3 ? '#1a7a52' : '#888780';
+
+    card.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+      + '<span style="font-size:12px;font-weight:600;color:var(--text);">' + city + '</span>'
+      + (isFirst ? '<span style="font-size:9px;font-weight:600;background:#1a7a52;color:#fff;padding:1px 5px;border-radius:3px;">CHEAPEST</span>' : '')
+      + '</div>'
+      + '<div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;letter-spacing:-0.5px;color:var(--text);">&#8369;' + d.avg.toFixed(2) + '</div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">'
+      + '<span style="font-size:10px;color:var(--text3);">Lo: &#8369;' + d.lo.toFixed(2) + ' (' + d.cheapest + ')</span>'
+      + '<span style="font-size:11px;font-weight:500;color:' + diffColor + ';">' + diffText + '</span>'
+      + '</div>';
+
+    grid.appendChild(card);
+  });
+}
+
+buildCityPriceGrid();
 
 </script>
 </body>
