@@ -109,27 +109,21 @@ async function handleFuel(apiKey, res) {
 `Today is ${today} (Philippine time).
 
 Search the web for:
-1. The most recent DOE (Department of Energy Philippines) weekly petroleum price monitoring report — find the LATEST effective date and adjustment amounts (e.g. +0.20/L gasoline, -0.10/L diesel)
+1. The most recent DOE (Department of Energy Philippines) weekly petroleum price monitoring report — find the LATEST effective date and adjustment amounts
 2. The ACTUAL CURRENT PUMP PRICES (not DOE SRP baselines) at Petron, Shell, and Unioil stations in Metro Manila NCR as of today
 
-IMPORTANT PRICE SANITY CHECK: Philippine pump prices as of 2025-2026 are in the range of ₱65-₱90/L for gasoline and ₱60-₱85/L for diesel. If your search returns prices below ₱60/L or above ₱120/L for regular grades, those are outdated — use the most recent data you can find.
+IMPORTANT PRICE SANITY CHECK: For Philippine pump prices, use the most recent data you can find.
 
 Respond with ONLY a JSON object. No markdown fences. No explanation. Start with { and end with }.
 
 {
-  "effective_date": "e.g. May 20, 2026",
-  "week_label": "e.g. Week of May 19-25, 2026",
-  "doe_adjustment": {
-    "gasoline_ron91_95": "+0.20",
-    "diesel_std": "-0.10",
-    "kerosene": "-0.15",
-    "lpg_per_kg": "+0.50",
-    "note": "One-sentence context for this week's adjustment"
+ "Visit and read fuelprice.ph and gaswatchph.com for the current week's official pump prices. Do not use old news articles or press releases. Return the exact prices shown on those sites for May 12, 2026."
   },
   "prices": {
-    "petron": { "ron91": 73.25, "ron95": 76.15, "ron100": 86.60, "diesel_std": 64.50, "diesel_prem": 68.75, "kerosene": 63.75 },
-    "shell":  { "ron91": 74.35, "ron95": 77.35, "ron97": 80.99, "diesel_std": 66.29, "diesel_prem": 70.99, "kerosene": 66.00 },
-    "unioil": { "ron91": 72.49, "ron95": 74.99, "diesel_std": 61.69 }
+  "petron": { "ron91": "SEARCH_RESULT", "ron95": "SEARCH_RESULT", ... },
+  "shell": { "ron91": "SEARCH_RESULT", "ron95": "SEARCH_RESULT", ... },
+  "unioil":  { "ron91": "SEARCH_RESULT", "ron95": "SEARCH_RESULT", ... }
+}
   },
   "trend_context": "1-2 sentences on recent price trend",
   "next_week_signal": "Brief note on what to expect next Tuesday",
