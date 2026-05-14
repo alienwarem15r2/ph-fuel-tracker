@@ -117,7 +117,7 @@ IMPORTANT PRICE SANITY CHECK: For Philippine pump prices, use the most recent da
 Respond with ONLY a JSON object. No markdown fences. No explanation. Start with { and end with }.
 
 {
- "Visit and read fuelprice.ph and gaswatchph.com for the current week's official pump prices. Do not use old news articles or press releases. Return the exact prices shown on those sites for May 12, 2026."
+ "Visit and read fuelprice.ph and gaswatchph.com for the current week's official pump prices. Do not use old news articles or press releases. Return the exact prices shown on those sites for May 12, 2026.":
   },
   "prices": {
   "petron": { "ron91": "SEARCH_RESULT", "ron95": "SEARCH_RESULT", ... },
