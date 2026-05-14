@@ -413,7 +413,7 @@
   </div>
 
   <!-- Trend + H2H -->
-  <div class="two-col">
+  <div style="display:flex;flex-direction:column;gap:12px;">
 
     <!-- Trend chart -->
     <div class="panel">
@@ -430,6 +430,9 @@
         <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b6a65;">
           <span style="display:inline-block;width:20px;height:0;border-top:2px dashed #dd1d21;"></span> Shell
         </span>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:#6b6a65;">
+          <span style="display:inline-block;width:20px;height:0;border-top:2px dotted #E65100;"></span> Unioil
+        </span>
         <span style="font-size:11px;color:#9e9d97;margin-left:auto;">⚡ Iran war crisis: Mar–Apr peak</span>
       </div>
       <div class="chart-wrap" style="height:200px;">
@@ -439,51 +442,57 @@
 
     <!-- Head-to-head -->
     <div class="panel">
-      <div class="panel-title">Petron vs Shell — this week</div>
+      <div class="panel-title">Petron vs Shell vs Unioil — this week</div>
       <table class="h2h-table">
         <thead>
           <tr>
             <th>Fuel</th>
-            <th>Petron</th>
-            <th>Shell</th>
-            <th>Save</th>
+            <th style="color:#0057a8;">Petron</th>
+            <th style="color:#dd1d21;">Shell</th>
+            <th style="color:#E65100;">Unioil</th>
+            <th>Cheapest</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>RON 91</td>
-            <td><span class="h2h-winner">₱84.45</span></td>
-            <td><span class="h2h-loser">₱87.35</span></td>
-            <td><span class="h2h-save">₱2.90/L</span></td>
+            <td><span class="h2h-loser">&#8369;84.45</span></td>
+            <td><span class="h2h-loser">&#8369;87.35</span></td>
+            <td><span class="h2h-winner">&#8369;83.49</span></td>
+            <td><span class="h2h-save">Unioil &#8722;&#8369;0.96</span></td>
           </tr>
           <tr>
             <td>RON 95</td>
-            <td><span class="h2h-winner">₱87.55</span></td>
-            <td><span class="h2h-loser">₱90.45</span></td>
-            <td><span class="h2h-save">₱2.90/L</span></td>
+            <td><span class="h2h-loser">&#8369;87.55</span></td>
+            <td><span class="h2h-loser">&#8369;90.45</span></td>
+            <td><span class="h2h-winner">&#8369;85.99</span></td>
+            <td><span class="h2h-save">Unioil &#8722;&#8369;1.56</span></td>
           </tr>
           <tr>
             <td>Diesel std</td>
-            <td><span class="h2h-winner">₱79.90</span></td>
-            <td><span class="h2h-loser">₱83.79</span></td>
-            <td><span class="h2h-save">₱3.89/L</span></td>
+            <td><span class="h2h-loser">&#8369;79.90</span></td>
+            <td><span class="h2h-loser">&#8369;83.79</span></td>
+            <td><span class="h2h-winner">&#8369;76.19</span></td>
+            <td><span class="h2h-save">Unioil &#8722;&#8369;3.71</span></td>
           </tr>
           <tr>
             <td>Diesel prem</td>
-            <td><span class="h2h-winner">₱83.15</span></td>
-            <td><span class="h2h-loser">₱87.50</span></td>
-            <td><span class="h2h-save">₱4.35/L</span></td>
+            <td><span class="h2h-winner">&#8369;83.15</span></td>
+            <td><span class="h2h-loser">&#8369;87.50</span></td>
+            <td><span style="font-size:11px;color:var(--text3);">N/A</span></td>
+            <td><span class="h2h-save">Petron &#8722;&#8369;4.35</span></td>
           </tr>
           <tr>
-            <td>Diesel cetane</td>
-            <td><span class="h2h-winner">CN 60</span></td>
-            <td><span class="h2h-loser">CN 54</span></td>
-            <td><span class="h2h-save">Petron</span></td>
+            <td>RON 97/100</td>
+            <td><span class="h2h-loser">&#8369;97.80</span></td>
+            <td><span class="h2h-loser">&#8369;94.20</span></td>
+            <td><span class="h2h-winner">&#8369;91.50</span></td>
+            <td><span class="h2h-save">Unioil &#8722;&#8369;2.70</span></td>
           </tr>
         </tbody>
       </table>
       <div style="margin-top:12px; font-size:11px; color:var(--text3); line-height:1.6;">
-        Green = cheaper. Petron is lower-priced across all fuel types this week. Both brands applied identical DOE adjustments on Tue May 12.
+        Green = cheapest in row. <strong style="color:#E65100;">Unioil wins</strong> on RON 91, 95, diesel std &amp; RON 97. Petron wins premium diesel. All 3 applied same DOE adjustments Tue May 12.
       </div>
     </div>
 
@@ -670,6 +679,66 @@
 
   </div>
 
+  <!-- Unioil brand card - full width, same format as Petron/Shell -->
+  <div class="panel" style="padding:0;overflow:hidden;margin-bottom:12px;">
+    <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+      <div style="width:36px;height:36px;border-radius:8px;background:#FFF3E0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#E65100;flex-shrink:0;">U</div>
+      <div>
+        <div class="panel-title" style="margin:0;">Unioil</div>
+        <div style="font-size:11px;color:var(--text3);">91 stations · NCR · Euro 6 compliant · budget-friendly</div>
+      </div>
+      <span style="margin-left:auto;font-size:11px;background:#e6f5ed;color:#1a7a52;padding:3px 8px;border-radius:20px;font-weight:500;">Cheapest diesel brand</span>
+    </div>
+    <div>
+      <div class="bp-row">
+        <div class="bp-left">
+          <div class="bp-dot" style="background:#888780;"></div>
+          <div>
+            <div class="bp-name">Unioil Euro 6 Gasoline</div>
+            <div class="bp-grade">Unleaded 91 <span class="grade-tag tag-std">standard</span></div>
+          </div>
+        </div>
+        <div class="bp-right"><div class="bp-price">&#8369;83.49</div><div class="bp-chg up">&#9650; +&#8369;0.47</div></div>
+      </div>
+      <div class="bp-row">
+        <div class="bp-left">
+          <div class="bp-dot" style="background:#378ADD;"></div>
+          <div>
+            <div class="bp-name">Unioil Euro 6 Premium</div>
+            <div class="bp-grade">Unleaded 95 <span class="grade-tag tag-prem">performance</span></div>
+          </div>
+        </div>
+        <div class="bp-right"><div class="bp-price">&#8369;85.99</div><div class="bp-chg up">&#9650; +&#8369;0.47</div></div>
+      </div>
+      <div class="bp-row">
+        <div class="bp-left">
+          <div class="bp-dot" style="background:#7057d6;"></div>
+          <div>
+            <div class="bp-name">Unioil Euro 6 Super</div>
+            <div class="bp-grade">RON 97 <span class="grade-tag tag-top">select stations</span></div>
+          </div>
+        </div>
+        <div class="bp-right"><div class="bp-price">&#8369;91.50</div><div class="bp-chg up">&#9650; +&#8369;0.47</div></div>
+      </div>
+      <div class="bp-row">
+        <div class="bp-left">
+          <div class="bp-dot" style="background:#1a7a52;"></div>
+          <div>
+            <div class="bp-name">Unioil Euro 6 Diesel</div>
+            <div class="bp-grade">Diesel <span class="grade-tag tag-prem">cheapest brand</span></div>
+          </div>
+        </div>
+        <div class="bp-right"><div class="bp-price">&#8369;76.19</div><div class="bp-chg down">&#9660; &#8722;&#8369;9.57</div></div>
+      </div>
+      <div class="bp-row" style="background:var(--surface2);">
+        <div style="font-size:12px;color:var(--text2);display:flex;gap:16px;flex-wrap:wrap;width:100%;">
+          <span>&#9989; Diesel <strong style="color:#1a7a52;">&#8369;3.71 cheaper than Petron</strong> · <strong style="color:#1a7a52;">&#8369;7.60 cheaper than Shell</strong></span>
+          <span style="color:var(--text3);">&#x26A0; No kerosene · No premium diesel grade</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Tank calculator -->
   <div class="panel" style="margin-bottom:12px;">
     <div class="panel-title">Tank cost calculator</div>
@@ -681,6 +750,9 @@
           <option value="r95">Gasoline RON 95</option>
           <option value="dsl">Diesel (standard — Diesel Max / FuelSave)</option>
           <option value="dslp">Diesel (premium — Turbo Diesel / V-Power)</option>
+        <option value="unioil91">Unioil Euro 6 Gasoline (RON 91)</option>
+        <option value="unioil95">Unioil Euro 6 Premium (RON 95)</option>
+        <option value="unioildsl">Unioil Euro 6 Diesel — cheapest!</option>
         </select>
       </div>
       <div class="cf-field">
@@ -926,6 +998,28 @@ const HIST = {
    131.99,138.49,125.69,109.09,
     99.04, 93.36, 83.79
   ],
+  // Unioil — Euro 6, consistently ₱0.96 below Petron (gas) and ₱3.71 below Petron (diesel)
+  unioil_ron91: [
+    63.94, 63.44, 62.94, 62.44,
+    61.94, 61.44, 60.94, 60.44,
+    64.24, 71.84, 82.54, 89.14,
+    95.44,100.34, 96.84, 89.24,
+    83.69, 83.02, 83.49
+  ],
+  unioil_ron95: [
+    65.69, 65.19, 64.69, 64.19,
+    63.69, 63.19, 62.69, 62.19,
+    66.34, 73.94, 84.64, 91.24,
+    97.54,102.44, 98.94, 91.34,
+    85.79, 85.52, 85.99
+  ],
+  unioil_diesel: [
+    56.19, 55.69, 55.19, 54.69,
+    54.19, 53.69, 53.19, 52.69,
+    59.29, 83.54,103.79,116.09,
+   124.39,130.89,118.09,101.49,
+    91.44, 85.76, 76.19
+  ],
 };
 
 const PRICES = {
@@ -943,19 +1037,19 @@ let curFuel = 'ron91';
 
 
 const FUEL_MAP = {
-  ron91:  { petron: 'petron_ron91', shell: 'shell_ron91',  pLabel: 'Petron Gasul',         sLabel: 'Shell FuelSave Unl.' },
-  ron95:  { petron: 'petron_ron95', shell: 'shell_ron95',  pLabel: 'Petron XCS',            sLabel: 'Shell V-Power Nitro+' },
-  diesel: { petron: 'petron_diesel',shell: 'shell_diesel', pLabel: 'Petron Diesel Max',     sLabel: 'Shell FuelSave Diesel' },
+  ron91:  { petron: 'petron_ron91', shell: 'shell_ron91', unioil: 'unioil_ron91',  pLabel: 'Petron Gasul',      sLabel: 'Shell FuelSave Unl.',   uLabel: 'Unioil Euro 6 RON 91' },
+  ron95:  { petron: 'petron_ron95', shell: 'shell_ron95', unioil: 'unioil_ron95',  pLabel: 'Petron XCS',        sLabel: 'Shell V-Power Nitro+',  uLabel: 'Unioil Euro 6 Premium' },
+  diesel: { petron: 'petron_diesel',shell: 'shell_diesel',unioil: 'unioil_diesel', pLabel: 'Petron Diesel Max', sLabel: 'Shell FuelSave Diesel', uLabel: 'Unioil Euro 6 Diesel' },
 };
 
 function renderChart(fuel) {
   const fm = FUEL_MAP[fuel];
   const pData = HIST[fm.petron];
   const sData = HIST[fm.shell];
+  const uData = HIST[fm.unioil];
   const ctx   = document.getElementById('trendChart').getContext('2d');
   if (tChart) tChart.destroy();
 
-  // Crisis annotation band (Mar 3 – Apr 7 = indices 8–13)
   tChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -965,7 +1059,7 @@ function renderChart(fuel) {
           label: fm.pLabel,
           data: pData,
           borderColor: '#0057a8',
-          backgroundColor: 'rgba(0,87,168,0.06)',
+          backgroundColor: 'rgba(0,87,168,0.05)',
           fill: true,
           tension: 0.35,
           pointRadius: 3,
@@ -983,6 +1077,18 @@ function renderChart(fuel) {
           pointBackgroundColor: '#dd1d21',
           borderWidth: 1.8,
           borderDash: [4,3],
+        },
+        {
+          label: fm.uLabel,
+          data: uData,
+          borderColor: '#E65100',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.35,
+          pointRadius: 3,
+          pointBackgroundColor: '#E65100',
+          borderWidth: 1.8,
+          borderDash: [2,2],
         }
       ]
     },
@@ -1034,35 +1140,46 @@ function calc() {
   const fill = parseFloat(document.getElementById('fc-fill').value);
   const L = Math.max(0, (fill - lvl) * tank);
   const p = PRICES[type];
+  if (!p) return;
+
+  const isUnioil = type.startsWith('unioil');
   const cp = L * p.petron;
   const cs = L * p.shell;
   const diff = cs - cp;
   const svP = L * (p.lw_p - p.petron);
   const svS = L * (p.lw_s - p.shell);
 
-  document.getElementById('cr-liters').textContent   = L.toFixed(1) + ' L';
-  document.getElementById('cr-pct').textContent       = (lvl*100).toFixed(0) + '% → ' + (fill*100).toFixed(0) + '%';
-  document.getElementById('cr-petron').textContent    = '₱' + cp.toFixed(0);
-  document.getElementById('cr-petron-sub').textContent = '@ ₱' + p.petron.toFixed(2) + '/L';
-  document.getElementById('cr-shell').textContent     = '₱' + cs.toFixed(0);
-  document.getElementById('cr-shell-sub').textContent  = '@ ₱' + p.shell.toFixed(2) + '/L';
-  document.getElementById('cr-save').textContent      = '₱' + diff.toFixed(0);
-  document.getElementById('cr-save-sub').textContent   = '₱' + (diff/L).toFixed(2) + '/L cheaper';
+  document.getElementById('cr-liters').textContent    = L.toFixed(1) + ' L';
+  document.getElementById('cr-pct').textContent        = (lvl*100).toFixed(0) + '% \u2192 ' + (fill*100).toFixed(0) + '%';
+  document.getElementById('cr-petron').textContent     = '\u20b1' + cp.toFixed(0);
+  document.getElementById('cr-petron-sub').textContent = '@ \u20b1' + p.petron.toFixed(2) + '/L';
+  document.getElementById('cr-shell').textContent      = '\u20b1' + cs.toFixed(0);
+  document.getElementById('cr-shell-sub').textContent  = '@ \u20b1' + p.shell.toFixed(2) + '/L';
+  document.getElementById('cr-save').textContent       = isUnioil ? '\u2014' : '\u20b1' + diff.toFixed(0);
+  document.getElementById('cr-save-sub').textContent   = isUnioil ? 'single brand' : '\u20b1' + (diff/L).toFixed(2) + '/L cheaper';
 
   const banner = document.getElementById('calc-banner');
   const msg    = document.getElementById('calc-msg');
-  const lbl    = FUEL_LABELS[type];
+  const lbl    = p.label || type;
+
+  if (isUnioil) {
+    banner.className = 'winner-banner good';
+    msg.innerHTML = 'Filling <strong>' + L.toFixed(1) + 'L</strong> of ' + lbl + ' costs <strong>\u20b1' + cp.toFixed(0) + '</strong>'
+      + (type === 'unioildsl' ? ' \u2014 the <strong>cheapest diesel brand in NCR</strong>, \u20b13.71/L less than Petron and \u20b17.60/L less than Shell.' : '.');
+    return;
+  }
   if (svP > 20) {
     banner.className = 'winner-banner good';
-    msg.innerHTML = `Petron saves <strong>₱${diff.toFixed(0)}</strong> vs Shell on this fill-up. Plus, vs last week you also save <strong>₱${svP.toFixed(0)}</strong> more on ${lbl} thanks to this week's adjustment.`;
+    msg.innerHTML = 'Petron saves <strong>\u20b1' + diff.toFixed(0) + '</strong> vs Shell. Plus, vs last week you save <strong>\u20b1' + svP.toFixed(0) + '</strong> more on ' + lbl + ' thanks to this week\'s adjustment.';
   } else if (p.chgDir === 'up') {
     banner.className = 'winner-banner warn';
-    msg.innerHTML = `Petron saves <strong>₱${diff.toFixed(0)}</strong> vs Shell. Note: ${lbl} increased ${p.adj} this Tuesday.`;
+    msg.innerHTML = 'Petron saves <strong>\u20b1' + diff.toFixed(0) + '</strong> vs Shell. Note: ' + lbl + ' increased ' + p.adj + ' this Tuesday.';
   } else {
     banner.className = 'winner-banner good';
-    msg.innerHTML = `Petron saves <strong>₱${diff.toFixed(0)}</strong> vs Shell on this fill-up (₱${(diff/L).toFixed(2)}/L). Both applied ${p.adj} this week.`;
+    msg.innerHTML = 'Petron saves <strong>\u20b1' + diff.toFixed(0) + '</strong> vs Shell on this fill-up (\u20b1' + (diff/L).toFixed(2) + '/L). Both applied ' + p.adj + ' this week.';
   }
 }
+
 
 /* ── Advice ── */
 function updateAdvice() {
