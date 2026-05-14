@@ -676,7 +676,7 @@ function applyLiveFuelData(d) {
       var lSym = lDir === 'up' ? '▲' : '▼';
       pills += '<span class="pill ' + lDir + '">' + lSym + ' LPG ' + adj.lpg_per_kg + '/kg</span>';
     }
-    document.getElementById('doe-pills').innerHTML = pills || '<span class="pill neutral">No adjustment data</span>';
+    document.getElementById('doe-pills').innerHTML = pills || '<span class="pill neutral">' + (adj.note || 'Adjustment data not available from price board') + '</span>';
   }
 
   // 3. Summary cards
