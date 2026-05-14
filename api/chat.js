@@ -51,18 +51,40 @@ export default async function handler(req, res) {
 
 /* ── DEBUG ── */
 async function handleDebug(res) {
-    // Temporary: list all env var keys (values hidden)
-  const allKeys = Object.keys(process.env).filter(k => 
-    k.includes('GROQ') || k.includes('GEMINI') || k.includes('API')
-  );
-  const groq = process.env.GROQ_API_KEY;
-  const gem = process.env.GEMINI_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
+  const gemKey = process.env.GEMINI_API_KEY;
+  
+  // Actually test Groq connectivity if key exists
+  let groqReachable = false;
+  let groqStatus = null;
+  let groqError = null;
+  if (groqKey) {
+    try {
+      const r = await fetch(`${GROQ_BASE}/models`, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${groqKey}` }
+      });
+      groqReachable = r.ok;
+      groqStatus = r.status;
+      if (!r.ok) {
+        const txt = await r.text();
+        groqError = { message: txt.slice(0, 200) };
+      }
+    } catch (e) {
+      groqError = { message: e.message };
+    }
+  }
+
   return res.status(200).json({
-    groq_key_present: !!groq,
-    gemini_key_present: !!gem,
-    node_version: process.version,
-    cache_fuel_age: apiCache.fuel.data ? Math.round((Date.now() - apiCache.fuel.ts) / 1000) + "s" : "empty",
-    cache_power_age: apiCache.power.data ? Math.round((Date.now() - apiCache.power.ts) / 1000) + "s" : "empty"
+    apiKeyPresent: !!groqKey,
+    apiKeyPrefix: groqKey ? groqKey.slice(0, 8) + "…" : null,
+    groqReachable: groqReachable,
+    groqStatus: groqStatus,
+    groqError: groqError,
+    nodeVersion: process.version,
+    vercelRegion: process.env.VERCEL_REGION || "unknown",
+    geminiKeyPresent: !!gemKey,
+    geminiPrefix: gemKey ? gemKey.slice(0, 8) + "…" : null
   });
 }
 
