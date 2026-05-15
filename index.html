@@ -289,6 +289,7 @@
         </div>
         <div class="chart-wrap" style="height:200px;">
           <canvas id="trendChart" role="img" aria-label="Weekly fuel price trend Philippines 2026"></canvas>
+          <div id="trend-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;background:var(--surface);border-radius:var(--radius-sm);">Loading trend data…</div>
         </div>
       </div>
 
@@ -1054,6 +1055,12 @@ var FUEL_MAP = {
 };
 
 function renderChart(fuel) {
+  var loadingEl = document.getElementById('trend-loading');
+  if (!liveDataReady) {
+    if (loadingEl) loadingEl.style.display = 'flex';
+    return;
+  }
+  if (loadingEl) loadingEl.style.display = 'none';
   var fm = FUEL_MAP[fuel];
   var ctx = document.getElementById('trendChart').getContext('2d');
   if (tChart) tChart.destroy();
