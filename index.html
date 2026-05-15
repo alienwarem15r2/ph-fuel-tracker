@@ -757,6 +757,23 @@ function applyLiveFuelData(d) {
 
   // 9. Re-run calculator and chart with live prices
   calc();
+
+ // 9.5 — Update chart with live prices before rendering
+  if (p && p.petron && p.shell) {
+    var lastIdx = HIST.labels.length - 1;
+    HIST.petron_ron91[lastIdx] = p.petron.ron91 || HIST.petron_ron91[lastIdx];
+    HIST.shell_ron91[lastIdx] = p.shell.ron91 || HIST.shell_ron91[lastIdx];
+    HIST.unioil_ron91[lastIdx] = (p.unioil && p.unioil.ron91) || HIST.unioil_ron91[lastIdx];
+    
+    HIST.petron_ron95[lastIdx] = p.petron.ron95 || HIST.petron_ron95[lastIdx];
+    HIST.shell_ron95[lastIdx] = p.shell.ron95 || HIST.shell_ron95[lastIdx];
+    HIST.unioil_ron95[lastIdx] = (p.unioil && p.unioil.ron95) || HIST.unioil_ron95[lastIdx];
+    
+    HIST.petron_diesel[lastIdx] = p.petron.diesel_std || HIST.petron_diesel[lastIdx];
+    HIST.shell_diesel[lastIdx] = p.shell.diesel_std || HIST.shell_diesel[lastIdx];
+    HIST.unioil_diesel[lastIdx] = (p.unioil && p.unioil.diesel_std) || HIST.unioil_diesel[lastIdx];
+  }
+ 
   renderChart(curFuel);
 }
 
