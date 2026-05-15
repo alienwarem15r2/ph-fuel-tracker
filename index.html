@@ -643,6 +643,7 @@ async function fetchLiveData() {
   }
 
   btn.classList.remove('loading');
+  liveDataReady = true;
   // Always run static init for chart, calculator etc.
   init();
   buildCityPriceGrid();
@@ -1175,6 +1176,7 @@ function calc() {
    CITY PRICE GRID
    ══════════════════════════════════════════════════════════════ */
 var NCR_AVG = { r91:73.25, r95:76.15, dsl:64.50 };
+var liveDataReady = false;
 
 function switchRegion(val) { activeRegion = val; buildCityPriceGrid(); }
 function switchCityFuel(type, btn) {
@@ -1188,6 +1190,10 @@ function switchBrand(brand) { activeBrand = brand; buildCityPriceGrid(); }
 function buildCityPriceGrid() {
   var grid = document.getElementById('city-price-grid');
   if (!grid) return;
+  if (!liveDataReady) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:24px 0;color:var(--text3);font-size:13px;">Loading city prices…</div>';
+    return;
+  }
   grid.innerHTML = '';
 
   var allCities = Object.keys(CITY_PRICES);
