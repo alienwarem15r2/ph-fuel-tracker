@@ -62,18 +62,44 @@ async function handleDebug(res) {
   const groq = process.env.GROQ_API_KEY;
   const gem = process.env.GEMINI_API_KEY;
 
-  let gwResult = null, gwError = null;
+  let gwResult = null, gwError = null, gwDiag = null;
   try {
     gwResult = await scrapeGasWatch("metro_manila");
   } catch (e) {
     gwError = e.message;
   }
 
+  // Raw diagnostic: fetch data.js and show key snippets
+  try {
+    const djRes = await fetch("https://gaswatchph.com/js/data.js", {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PricePH/1.0)" }
+    });
+    const js = await djRes.text();
+    const phIdx = js.indexOf('PRICE_HISTORY');
+    const arrStart = js.indexOf('[', phIdx);
+    const objStart = js.indexOf('{', arrStart);
+    const weekBlock = extractBlock(js, objStart);
+    const brandsIdx = weekBlock ? weekBlock.indexOf('brands') : -1;
+    const brandsStart = weekBlock ? weekBlock.indexOf('{', brandsIdx) : -1;
+    const brandsBlock = (weekBlock && brandsStart !== -1) ? extractBlock(weekBlock, brandsStart) : null;
+    gwDiag = {
+      datajs_len: js.length,
+      phIdx,
+      weekBlock_len: weekBlock ? weekBlock.length : 0,
+      weekBlock_start: weekBlock ? weekBlock.slice(0, 120) : null,
+      brandsIdx,
+      brandsBlock_len: brandsBlock ? brandsBlock.length : 0,
+      brandsBlock_preview: brandsBlock ? brandsBlock.slice(0, 300) : null,
+      petron_pos: brandsBlock ? brandsBlock.toLowerCase().indexOf('petron:') : -1,
+    };
+  } catch (e) {
+    gwDiag = { error: e.message };
+  }
+
   return res.status(200).json({
     apiKeyPresent: !!groq,
     apiKeyPrefix: groq ? groq.slice(0, 8) + "…" : null,
     geminiKeyPresent: !!gem,
-    geminiPrefix: gem ? gem.slice(0, 8) + "…" : null,
     nodeVersion: process.version,
     vercelRegion: process.env.VERCEL_REGION || "unknown",
     cache_fuel_age: apiCache.fuel.data ? Math.round((Date.now() - apiCache.fuel.ts) / 1000) + "s" : "empty",
@@ -85,6 +111,7 @@ async function handleDebug(res) {
     gaswatch_adj_gasoline: gwResult?.adjustment?.gasoline_ron91_95,
     gaswatch_adj_diesel: gwResult?.adjustment?.diesel_std,
     gaswatch_adj_kerosene: gwResult?.adjustment?.kerosene,
+    diag: gwDiag,
   });
 }
 
