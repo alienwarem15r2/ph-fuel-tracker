@@ -677,10 +677,8 @@ function applyLiveFuelData(d) {
       var _dd = _p.petron.diesel_std - HIST.petron_diesel[_prev];
       if (Math.abs(_dd) < 50) _adj.diesel_std = (_dd >= 0 ? '+' : '') + _dd.toFixed(2);
     }
-    if (!_adj.kerosene && _p.petron.kerosene && HIST.petron_diesel[_prev]) {
-      var _kd = _p.petron.kerosene - (HIST.petron_diesel[_prev] - 0.75);
-      if (Math.abs(_kd) < 50) _adj.kerosene = (_kd >= 0 ? '+' : '') + _kd.toFixed(2);
-    }
+    // Kerosene has different DOE adjustment from diesel — don't estimate from diesel HIST.
+    // Its adjustment comes from the AI call in chat.js.
   }
 
   // 2. DOE announcement banner
