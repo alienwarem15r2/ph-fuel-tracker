@@ -435,17 +435,41 @@
         <span style="font-size:11px;color:#9e9d97;margin-left:auto;" id="power-updated-label">Meralco · Live data</span>
       </div>
 
-      <!-- NGCP Grid Alert Banner -->
+      <!-- NGCP Power Situation Outlook -->
       <div id="grid-alert-box" style="border-radius:12px;padding:14px 16px;margin-bottom:10px;border:1px solid rgba(0,0,0,0.08);background:var(--surface);">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-          <div id="grid-alert-icon" style="font-size:22px;flex-shrink:0;">🔄</div>
+        <!-- Header -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <div id="grid-alert-icon" style="font-size:20px;flex-shrink:0;">🔄</div>
           <div style="flex:1;">
-            <div id="grid-alert-title" style="font-size:14px;font-weight:600;">Loading grid status…</div>
-            <div id="grid-alert-sub" style="font-size:12px;margin-top:1px;color:var(--text2);">Fetching NGCP alert status</div>
+            <div style="font-size:13px;font-weight:700;letter-spacing:-.2px;">Power Situation Outlook</div>
+            <div id="grid-alert-title" style="font-size:12px;font-weight:600;margin-top:2px;">Loading…</div>
           </div>
           <a href="https://www.ngcp.ph" target="_blank" rel="noopener" style="font-size:11px;color:#1a4fa0;text-decoration:none;flex-shrink:0;">NGCP ↗</a>
         </div>
-        <div id="grid-alert-times" style="display:flex;flex-wrap:wrap;gap:7px;"></div>
+        <div id="grid-alert-sub" style="font-size:12px;color:var(--text2);margin-bottom:10px;display:none;"></div>
+        <!-- PSO data table -->
+        <div id="pso-grid" style="display:none;">
+          <div style="display:grid;grid-template-columns:auto repeat(3,1fr);gap:3px 8px;font-size:12px;align-items:center;">
+            <div></div>
+            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">LUZON</div>
+            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">VISAYAS</div>
+            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">MINDANAO</div>
+            <div style="font-size:11px;color:var(--text3);padding:3px 0;">Capacity (MW)</div>
+            <div style="text-align:center;" id="pso-luz-cap">—</div>
+            <div style="text-align:center;" id="pso-vis-cap">—</div>
+            <div style="text-align:center;" id="pso-min-cap">—</div>
+            <div style="font-size:11px;color:var(--text3);padding:3px 0;">Peak Demand</div>
+            <div style="text-align:center;" id="pso-luz-dem">—</div>
+            <div style="text-align:center;" id="pso-vis-dem">—</div>
+            <div style="text-align:center;" id="pso-min-dem">—</div>
+            <div style="font-size:11px;font-weight:700;padding:3px 0;">Op. Margin</div>
+            <div style="text-align:center;font-weight:700;" id="pso-luz-mar">—</div>
+            <div style="text-align:center;font-weight:700;" id="pso-vis-mar">—</div>
+            <div style="text-align:center;font-weight:700;" id="pso-min-mar">—</div>
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px;" id="pso-as-of"></div>
+        </div>
+        <div id="grid-alert-times" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:6px;"></div>
       </div>
 
       <!-- City filter tabs -->
@@ -1073,42 +1097,79 @@ function buildBrandCards(d) {
    APPLY LIVE POWER DATA TO UI
    ══════════════════════════════════════════════════════════════ */
 function applyLivePowerData(d) {
-  // Grid alert banner
-    if (!d || !d.grid_status) {
-    console.warn('[PH Watch] Power data missing grid_status');
-    return;
-  }
+  if (!d || !d.grid_status) { console.warn('[PH Watch] Power data missing grid_status'); return; }
   var gs = d.grid_status;
-    var box = document.getElementById('grid-alert-box');
-    box.style.background = gs.bg || 'var(--surface)';
-    box.style.borderColor = gs.border || 'var(--border)';
-    document.getElementById('grid-alert-icon').textContent = gs.level === 'red' ? '🔴' : gs.level === 'yellow' ? '🟡' : '✅';
-    document.getElementById('grid-alert-title').textContent = gs.title || 'Grid Status';
-    document.getElementById('grid-alert-sub').textContent = gs.subtitle || '';
-    document.getElementById('grid-alert-title').style.color = gs.color || 'var(--text)';
 
-    var timesHTML = '';
-    if (gs.alert_times && gs.alert_times.length) {
-      gs.alert_times.forEach(function(t) {
-        timesHTML += '<span style="font-size:12px;font-weight:500;padding:3px 9px;border-radius:6px;background:' + (gs.bg||'#f0f0f0') + ';color:' + (gs.color||'#333') + ';border:1px solid ' + (gs.border||'#ccc') + ';">' + t + '</span>';
-      });
-    }
-    document.getElementById('grid-alert-times').innerHTML = timesHTML;
+  var box = document.getElementById('grid-alert-box');
+  box.style.background = gs.bg || 'var(--surface)';
+  box.style.borderColor = gs.border || 'var(--border)';
 
-    // Update power tab badge
+  var iconEl = document.getElementById('grid-alert-icon');
+  iconEl.textContent = gs.level === 'red' ? '🔴' : gs.level === 'yellow' ? '🟡' : '✅';
+
+  var titleEl = document.getElementById('grid-alert-title');
+  titleEl.textContent = gs.title || 'Grid Status';
+  titleEl.style.color = gs.color || 'var(--text)';
+
+  // PSO data table
+  if (gs.pso) {
+    var psoGrid = document.getElementById('pso-grid');
+    if (psoGrid) psoGrid.style.display = '';
+
+    var fmt = function(n) { return n != null ? Number(n).toLocaleString() : '—'; };
+    var setEl = function(id, val) { var e = document.getElementById(id); if (e) e.textContent = val; };
+    var marginEl = function(id, val) {
+      var e = document.getElementById(id);
+      if (!e) return;
+      e.textContent = val == null ? '—' : (val > 0 ? '+' : '') + Number(val).toLocaleString();
+      e.style.color  = val == null ? 'var(--text3)' : val < 0 ? '#b83232' : val < 600 ? '#8a5a00' : '#1a7a52';
+    };
+    setEl('pso-luz-cap', fmt(gs.pso.luzon    && gs.pso.luzon.capacity));
+    setEl('pso-vis-cap', fmt(gs.pso.visayas  && gs.pso.visayas.capacity));
+    setEl('pso-min-cap', fmt(gs.pso.mindanao && gs.pso.mindanao.capacity));
+    setEl('pso-luz-dem', fmt(gs.pso.luzon    && gs.pso.luzon.demand));
+    setEl('pso-vis-dem', fmt(gs.pso.visayas  && gs.pso.visayas.demand));
+    setEl('pso-min-dem', fmt(gs.pso.mindanao && gs.pso.mindanao.demand));
+    marginEl('pso-luz-mar', gs.pso.luzon    && gs.pso.luzon.margin);
+    marginEl('pso-vis-mar', gs.pso.visayas  && gs.pso.visayas.margin);
+    marginEl('pso-min-mar', gs.pso.mindanao && gs.pso.mindanao.margin);
+
+    var asofEl = document.getElementById('pso-as-of');
+    if (asofEl && gs.pso.as_of) asofEl.textContent = 'as of ' + gs.pso.as_of + ' · MW · Demand from WESM Day Ahead Projection';
+
+    // Hide subtitle when PSO table is shown (table is self-explanatory)
+    var subEl = document.getElementById('grid-alert-sub');
+    if (subEl) { subEl.style.display = 'none'; }
+  } else {
+    // No PSO data — show text subtitle as fallback
+    var subEl = document.getElementById('grid-alert-sub');
+    if (subEl) { subEl.textContent = gs.subtitle || ''; subEl.style.display = gs.subtitle ? '' : 'none'; }
+  }
+
+  var timesHTML = '';
+  if (gs.alert_times && gs.alert_times.length) {
+    gs.alert_times.forEach(function(t) {
+      timesHTML += '<span style="font-size:12px;font-weight:500;padding:3px 9px;border-radius:6px;background:' + (gs.bg||'#f0f0f0') + ';color:' + (gs.color||'#333') + ';border:1px solid ' + (gs.border||'#ccc') + ';">' + t + '</span>';
+    });
+  }
+  document.getElementById('grid-alert-times').innerHTML = timesHTML;
+
+  // Power tab badge
+  var badge = document.getElementById('power-badge');
+  if (badge) {
     if (gs.level !== 'normal') {
-      var badge = document.getElementById('power-badge');
       badge.style.display = '';
       badge.textContent = gs.level === 'red' ? 'Red Alert' : 'Yellow Alert';
       badge.style.background = gs.level === 'red' ? '#fdeaea' : '#fef3dc';
-      badge.style.color = gs.level === 'red' ? '#b83232' : '#8a5a00';
+      badge.style.color      = gs.level === 'red' ? '#b83232' : '#8a5a00';
+    } else {
+      badge.style.display = 'none';
     }
+  }
 
   if (d.last_updated) {
     document.getElementById('power-updated-label').textContent = 'Meralco · Updated ' + d.last_updated;
   }
-
-  // Store interruptions for display
   if (d.interruptions) {
     window._liveInterruptions = d.interruptions;
     initPower();
