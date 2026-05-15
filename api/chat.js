@@ -125,6 +125,7 @@ async function handleFuel(res, region) {
           lpg_per_kg: null,
           note: "Prices from GasWatch PH community + DOE data"
         },
+        fuel_adjustments: gwData.fuelAdjustments || null,
         prices: gwData.prices,
         trend_context: gwData.trend || "Live GasWatch PH data",
         next_week_signal: null,
@@ -188,6 +189,10 @@ async function handleFuel(res, region) {
         kerosene: null,
         lpg_per_kg: null,
         note: "Unable to fetch live prices. All data sources are unavailable."
+      },
+      fuel_adjustments: {
+        ron91: null, ron95: null, ron100: null, ron97: null,
+        diesel_std: null, diesel_prem: null, kerosene: null
       },
       prices: {
         petron: { ron91: null, ron95: null, ron100: null, diesel_std: null, diesel_prem: null, kerosene: null },
@@ -304,20 +309,94 @@ async function scrapeGasWatch(region) {
       unioil: { ron91: 0, ron95: 0, diesel_std: 0 }
     };
 
+    // ── Extract DOE weekly adjustment from page text ──
+    let doeGasoline = null;
+    let doeDiesel = null;
+    let doeKerosene = null;
+    let doeNote = "GasWatch PH community + DOE data";
+    let trendText = "Live GasWatch PH data";
+
+    // Normalize HTML for pattern matching
+    const flatHtml = html.replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ');
+
+    // Pattern 1: "Week of Diesel −₱5.00–10.48/LGasoline −₱0.84–1.08/LKerosene −₱13.30/L"
+    const weekPattern = /Week\s+of\s*Diesel\s*([−+\-]?₱?[\d.–\-]+(?:\s*[-–]\s*₱?[\d.]+)?\/?L?)\s*Gasoline\s*([−+\-]?₱?[\d.–\-]+(?:\s*[-–]\s*₱?[\d.]+)?\/?L?)\s*Kerosene\s*([−+\-]?₱?[\d.–\-]+\/?L?)/i;
+    const weekMatch = flatHtml.match(weekPattern);
+    if (weekMatch) {
+      doeDiesel = cleanAdj(weekMatch[1]);
+      doeGasoline = cleanAdj(weekMatch[2]);
+      doeKerosene = cleanAdj(weekMatch[3]);
+      trendText = `Week of — Diesel ${doeDiesel}, Gasoline ${doeGasoline}, Kerosene ${doeKerosene}`;
+    }
+
+    // Pattern 2: "diesel −₱9.57, gasoline +₱0.47, kerosene −₱13.30" (from price history / embedded text)
+    if (!doeGasoline || !doeDiesel) {
+      const adjPattern = /DOE(?:[-\s]confirmed)?\s+adjustment\s+was\s+(?:.*?)?diesel\s*([−+\-]?₱?[\d.]+)\s*,?\s*(?:.*?)?gasoline\s*([−+\-]?₱?[\d.]+)\s*,?\s*(?:.*?)?kerosene\s*([−+\-]?₱?[\d.]+)/i;
+      const adjMatch = flatHtml.match(adjPattern);
+      if (adjMatch) {
+        if (!doeDiesel) doeDiesel = cleanAdj(adjMatch[1]);
+        if (!doeGasoline) doeGasoline = cleanAdj(adjMatch[2]);
+        if (!doeKerosene) doeKerosene = cleanAdj(adjMatch[3]);
+      }
+    }
+
+    // Pattern 3: Loose per-fuel labels anywhere in page (e.g. near tables or hero sections)
+    if (!doeGasoline) {
+      const gasPat = /Gasoline\s*([−+\-]?₱?[\d.]+(?:\s*[-–]\s*₱?[\d.]+)?\/?L?)/i;
+      const gasM = html.match(gasPat);
+      if (gasM) doeGasoline = cleanAdj(gasM[1]);
+    }
+    if (!doeDiesel) {
+      const diePat = /Diesel\s*([−+\-]?₱?[\d.]+(?:\s*[-–]\s*₱?[\d.]+)?\/?L?)/i;
+      const dieM = html.match(diePat);
+      if (dieM) doeDiesel = cleanAdj(dieM[1]);
+    }
+    if (!doeKerosene) {
+      const keroPat = /Kerosene\s*([−+\-]?₱?[\d.]+\/?L?)/i;
+      const keroM = html.match(keroPat);
+      if (keroM) doeKerosene = cleanAdj(keroM[1]);
+    }
+
+    // Pattern 4: " hike amounts " or " rollback " text near week label
+    const hikeRollback = html.match(/(gasoline|diesel|kerosene)\s*(?:hike|rollback|increase|decrease|adjustment)\s*(?:of\s*)?([−+\-]?₱?[\d.]+)/gi);
+    if (hikeRollback && hikeRollback.length > 0) {
+      hikeRollback.forEach(line => {
+        const m = line.match(/(gasoline|diesel|kerosene)\s*(?:hike|rollback|increase|decrease|adjustment)\s*(?:of\s*)?([−+\-]?₱?[\d.]+)/i);
+        if (m) {
+          const val = cleanAdj(m[2]);
+          if (m[1].toLowerCase() === 'gasoline' && !doeGasoline) doeGasoline = val;
+          if (m[1].toLowerCase() === 'diesel' && !doeDiesel) doeDiesel = val;
+          if (m[1].toLowerCase() === 'kerosene' && !doeKerosene) doeKerosene = val;
+        }
+      });
+    }
+
+    // Build per-fuel adjustment labels for UI (replaces "Loading...")
+    const fuelAdjustments = {
+      ron91: doeGasoline || null,
+      ron95: doeGasoline || null,
+      ron100: doeGasoline || null,
+      ron97: doeGasoline || null,
+      diesel_std: doeDiesel || null,
+      diesel_prem: doeDiesel || null,
+      kerosene: doeKerosene || null
+    };
+
+    // ── Price table scraping ──
     // Pattern: <tr><td>Brand</td><td>Diesel</td><td>Unleaded</td></tr>
-    const tableRegex = /<tr[^>]*>\s*<<td[^>]*>(.*?)<<\/td>\s*<<td[^>]*>(.*?)<<\/td>\s*<<td[^>]*>(.*?)<<\/td>\s*<<\/tr>/gi;
-    
+    const tableRegex = /<tr[^>]*>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/gi;
+
     let match;
     let foundCount = 0;
 
     while ((match = tableRegex.exec(html)) !== null) {
-      const rawBrand = match[1].replace(/<<[^>]+>/g, '').trim().toLowerCase();
-      const col2 = match[2].replace(/<<[^>]+>/g, '').replace(/[₱,]/g, '').trim();
-      const col3 = match[3].replace(/<<[^>]+>/g, '').replace(/[₱,]/g, '').trim();
+      const rawBrand = match[1].replace(/<[^>]+>/g, '').trim().toLowerCase();
+      const col2 = match[2].replace(/<[^>]+>/g, '').replace(/[₱,]/g, '').trim();
+      const col3 = match[3].replace(/<[^>]+>/g, '').replace(/[₱,]/g, '').trim();
 
       const val2 = parseFloat(col2) || 0;
       const val3 = parseFloat(col3) || 0;
-      
+
       let diesel, unleaded;
       if (val2 > 0 && val3 > 0) {
         diesel = val2 < val3 ? val2 : val3;
@@ -385,28 +464,41 @@ async function scrapeGasWatch(region) {
     }
 
     const adjustment = {
-      gasoline_ron91_95: null,
-      diesel_std: null,
-      kerosene: null,
+      gasoline_ron91_95: doeGasoline,
+      diesel_std: doeDiesel,
+      kerosene: doeKerosene,
       lpg_per_kg: null,
-      note: "GasWatch PH community + DOE data"
+      note: doeNote
     };
 
     if (prices.petron.ron91 < 50 || prices.petron.ron91 > 150) {
       throw new Error("GasWatch scraper returned unrealistic prices");
     }
 
-    return { prices, adjustment, foundCount };
+    return { prices, adjustment, fuelAdjustments, trend: trendText, foundCount };
   } catch (e) {
     clearTimeout(timeout);
     throw e;
   }
 }
 
+/* helper: clean adjustment string */
+function cleanAdj(raw) {
+  if (!raw) return null;
+  let s = raw.trim()
+    .replace(/[\u2013\u2014]/g, '-')   // en/em dash to hyphen
+    .replace(/[\u2212]/g, '-')         // minus sign to hyphen
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Ensure ₱ prefix if missing but has digits
+  if (/[\d]/.test(s) && !s.includes('₱')) s = '₱' + s;
+  return s;
+}
+
 /* ── PROMPT BUILDERS ── */
 function buildFuelPrompt(today) {
-  return `Today is ${today}. Search gaswatchph.com for current PH pump prices (Petron/Shell/Unioil) and latest DOE weekly adjustment. Return ONLY compact JSON, no markdown, no explanation. RON91 realistic ₱80-95, diesel ₱75-90. Use null if unavailable.
-{"effective_date":"${today}","week_label":"Week of ${today}","doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null},"prices":{"petron":{"ron91":null,"ron95":null,"ron100":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"shell":{"ron91":null,"ron95":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"unioil":{"ron91":null,"ron95":null,"diesel_std":null}},"trend_context":null,"next_week_signal":null,"fill_up_advice":null,"sources":[]}`;
+  return `Today is ${today}. Search gaswatchph.com for current PH pump prices (Petron/Shell/Unioil) AND the latest DOE weekly adjustment (e.g. "diesel -₱5.00/L", "gasoline +₱1.00/L", "kerosene -₱2.00/L"). Return ONLY compact JSON, no markdown, no explanation. RON91 realistic ₱80-95, diesel ₱75-90. Use null if unavailable.
+{"effective_date":"${today}","week_label":"Week of ${today}","doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null},"fuel_adjustments":{"ron91":null,"ron95":null,"ron100":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"prices":{"petron":{"ron91":null,"ron95":null,"ron100":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"shell":{"ron91":null,"ron95":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"unioil":{"ron91":null,"ron95":null,"diesel_std":null}},"trend_context":null,"next_week_signal":null,"fill_up_advice":null,"sources":[]}`;
 }
 
 function buildPowerPrompt(today) {
