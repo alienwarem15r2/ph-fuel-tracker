@@ -61,18 +61,30 @@ export default async function handler(req, res) {
 async function handleDebug(res) {
   const groq = process.env.GROQ_API_KEY;
   const gem = process.env.GEMINI_API_KEY;
+
+  let gwResult = null, gwError = null;
+  try {
+    gwResult = await scrapeGasWatch("metro_manila");
+  } catch (e) {
+    gwError = e.message;
+  }
+
   return res.status(200).json({
     apiKeyPresent: !!groq,
     apiKeyPrefix: groq ? groq.slice(0, 8) + "…" : null,
-    groqReachable: null,
-    groqStatus: null,
-    groqError: null,
     geminiKeyPresent: !!gem,
     geminiPrefix: gem ? gem.slice(0, 8) + "…" : null,
     nodeVersion: process.version,
     vercelRegion: process.env.VERCEL_REGION || "unknown",
     cache_fuel_age: apiCache.fuel.data ? Math.round((Date.now() - apiCache.fuel.ts) / 1000) + "s" : "empty",
-    cache_power_age: apiCache.power.data ? Math.round((Date.now() - apiCache.power.ts) / 1000) + "s" : "empty"
+    gaswatch_ok: !!gwResult,
+    gaswatch_error: gwError,
+    gaswatch_foundCount: gwResult?.foundCount,
+    gaswatch_petron_ron91: gwResult?.prices?.petron?.ron91,
+    gaswatch_petron_kerosene: gwResult?.prices?.petron?.kerosene,
+    gaswatch_adj_gasoline: gwResult?.adjustment?.gasoline_ron91_95,
+    gaswatch_adj_diesel: gwResult?.adjustment?.diesel_std,
+    gaswatch_adj_kerosene: gwResult?.adjustment?.kerosene,
   });
 }
 
@@ -305,6 +317,14 @@ function grabNum(src, key) {
   return m ? parseFloat(m[1]) : 0;
 }
 
+// Extract the object/array block for a named brand key within a parent block.
+function getBrandBlockIn(src, name) {
+  const idx = src.toLowerCase().indexOf(name.toLowerCase() + ':');
+  if (idx === -1) return null;
+  const bs = src.indexOf('{', idx);
+  return bs === -1 ? null : extractBlock(src, bs);
+}
+
 async function scrapeGasWatch(_region) {
   const DATA_JS_URL = "https://gaswatchph.com/js/data.js";
   const controller = new AbortController();
@@ -380,13 +400,6 @@ async function scrapeGasWatch(_region) {
       }
     }
 
-    function getBrandBlockIn(src, name) {
-      const idx = src.toLowerCase().indexOf(name.toLowerCase() + ':');
-      if (idx === -1) return null;
-      const bs = src.indexOf('{', idx);
-      return bs === -1 ? null : extractBlock(src, bs);
-    }
-
     /* ── 3. Adjustments from advisory title ──
        Format: "diesel −₱9.57, gasoline +₱0.47, kerosene −₱13.30"
        Unicode minus U+2212 (−) and regular hyphen both used. */
@@ -400,10 +413,11 @@ async function scrapeGasWatch(_region) {
 
     let adjGasoline = null, adjDiesel = null, adjKerosene = null, adjLpg = null;
 
-    // Look for advisory/announcement title text
+    // Look for advisory/announcement title text.
+    // In data.js: ADVISORIES[0].title = "May 12 big rollback: diesel −₱9.57, gasoline +₱0.47, kerosene −₱13.30"
     const advPatterns = [
+      /title\s*:\s*["'`]([^"'`]*(?:diesel|gasoline)[^"'`]*)["'`]/i,
       /advisory[_\s]?title\s*:\s*["'`]([^"'`]+)["'`]/i,
-      /title\s*:\s*["'`]([^"'`]*(?:diesel|gasoline|kerosene)[^"'`]*)["'`]/i,
       /["'`]([^"'`]*diesel[^"'`]*gasoline[^"'`]*)["'`]/i,
     ];
     for (const pat of advPatterns) {
