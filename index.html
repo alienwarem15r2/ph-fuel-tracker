@@ -694,7 +694,13 @@ function applyLiveFuelData(d) {
         var lSym = lDir === 'up' ? '▲' : '▼';
         pills += '<span class="pill ' + lDir + '">' + lSym + ' LPG ' + adj.lpg_per_kg + '/kg</span>';
       }
-      document.getElementById('doe-pills').innerHTML = pills || '<span class="pill neutral">No adjustment data</span>';
+      if (!pills) {
+        var src = d._meta && d._meta.source;
+        pills = src === 'gaswatch'
+          ? '<span class="pill neutral">' + (adj.note || 'Prices live from GasWatch PH · DOE data') + '</span>'
+          : '<span class="pill neutral">No adjustment data available</span>';
+      }
+      document.getElementById('doe-pills').innerHTML = pills;
     }
   }
 
@@ -809,6 +815,9 @@ function setCard(priceId, price, adj, chgId) {
     var sym = dir === 'up' ? '▲' : '▼';
     chgEl.className = 'sum-change ' + dir;
     chgEl.textContent = sym + ' ' + adj.replace('+','') + ' this week';
+  } else {
+    chgEl.className = 'sum-change flat';
+    chgEl.textContent = 'No adjustment this week';
   }
 }
 
