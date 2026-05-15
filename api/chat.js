@@ -260,6 +260,70 @@ async function handleFuel(res, region) {
   return res.status(200).json(result);
 }
 
+/* ── NGCP DIRECT SCRAPER ── */
+async function fetchNGCPPage() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch('https://www.ngcp.ph/', {
+      signal: controller.signal,
+      headers: MERALCO_BROWSER_HEADERS
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`NGCP HTTP ${res.status}`);
+    const html = await res.text();
+    return parseNGCPOutlook(html);
+  } catch (e) { clearTimeout(timeout); throw e; }
+}
+
+function parseNGCPOutlook(html) {
+  const tableIdx = html.indexOf('id="table-dailyoutlook"');
+  if (tableIdx === -1) throw new Error('PSO table not found in NGCP page');
+  const tableStart = html.lastIndexOf('<table', tableIdx);
+  const tableEnd   = html.indexOf('</table>', tableIdx) + 8;
+  const tableHtml  = html.substring(tableStart, tableEnd);
+
+  const cells = [];
+  for (const m of tableHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
+    const text = m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').trim();
+    if (text) cells.push(text);
+  }
+
+  const asOf   = (cells.find(c => /as of/i.test(c)) || '').replace(/[()]/g,'').replace(/as of /i,'').trim();
+  const capIdx = cells.findIndex(c => /available.*generating/i.test(c));
+  const demIdx = cells.findIndex(c => /system.*peak.*demand/i.test(c));
+  const marIdx = cells.findIndex(c => /operating.*margin/i.test(c));
+  if (marIdx === -1) throw new Error('Operating Margin row not found');
+
+  const pn = s => { const n = parseInt((s||'').replace(/[,\s]/g,''),10); return isNaN(n) ? null : n; };
+  const luzMar = pn(cells[marIdx+1]), visMar = pn(cells[marIdx+2]), minMar = pn(cells[marIdx+3]);
+  if (luzMar === null) throw new Error('Luzon margin not parsed');
+
+  let level, color, bg, border, title, subtitle;
+  if (luzMar < 0) {
+    level='red'; color='#b83232'; bg='#fdeaea'; border='rgba(184,50,50,.2)';
+    title=`Luzon — Insufficient Supply (${luzMar.toLocaleString()} MW)`;
+    subtitle=`Supply deficit. Rotating brownouts possible.`;
+  } else if (luzMar < 600) {
+    level='yellow'; color='#8a5a00'; bg='#fef3dc'; border='rgba(138,90,0,.2)';
+    title=`Luzon — Yellow Alert (+${luzMar.toLocaleString()} MW)`;
+    subtitle=`Reserve below threshold. No brownouts yet, but supply is tight.`;
+  } else {
+    level='normal'; color='#1a7a52'; bg='#e6f5ed'; border='rgba(26,122,82,.2)';
+    title=`Luzon — Normal (+${luzMar.toLocaleString()} MW)`;
+    subtitle=`Adequate operating reserve. No grid alert.`;
+  }
+
+  return {
+    level, title, subtitle, color, bg, border, alert_times: [],
+    pso: {
+      as_of: asOf,
+      luzon:    { capacity: pn(cells[capIdx+1]), demand: pn(cells[demIdx+1]), margin: luzMar },
+      visayas:  { capacity: pn(cells[capIdx+2]), demand: pn(cells[demIdx+2]), margin: visMar },
+      mindanao: { capacity: pn(cells[capIdx+3]), demand: pn(cells[demIdx+3]), margin: minMar }
+    }
+  };
+}
 /* ── POWER (Direct Meralco scrape + Gemini NGCP → Groq → Unavailable) ── */
 async function handlePower(res) {
   const cached = getCache("power");
@@ -272,20 +336,31 @@ async function handlePower(res) {
   const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey   = process.env.GROQ_API_KEY;
 
-  // Run Meralco direct scrape + NGCP status query in parallel
-  const [meralcoResult, ngcpResult] = await Promise.allSettled([
+  // Run Meralco direct scrape + NGCP direct scrape in parallel
+  const [meralcoResult, ngcpDirectResult] = await Promise.allSettled([
     fetchMeralcoPages(),
-    geminiKey
-      ? geminiGenerate(geminiKey, buildNGCPPrompt(today)).then(r => extractJSON(r))
-      : Promise.resolve(null)
+    fetchNGCPPage()
   ]);
 
   const meralcoData = meralcoResult.status === 'fulfilled' ? meralcoResult.value : null;
-  const ngcpData    = ngcpResult.status   === 'fulfilled' ? ngcpResult.value    : null;
+  // Wrap direct PSO result into the same shape as the Gemini response { grid_status }
+  let ngcpData = ngcpDirectResult.status === 'fulfilled'
+    ? { grid_status: ngcpDirectResult.value }
+    : null;
 
-  if (meralcoData)  console.log("[power] Meralco direct OK, interruptions:", meralcoData.interruptions.length);
-  else              console.warn("[power] Meralco direct failed:", meralcoResult.reason?.message);
-  if (!ngcpData)    console.warn("[power] NGCP Gemini failed:", ngcpResult.reason?.message);
+  if (meralcoData) console.log("[power] Meralco direct OK, interruptions:", meralcoData.interruptions.length);
+  else             console.warn("[power] Meralco direct failed:", meralcoResult.reason?.message);
+
+  if (!ngcpData) {
+    console.warn("[power] NGCP direct scrape failed:", ngcpDirectResult.reason?.message, "— trying Gemini");
+    if (geminiKey) {
+      try {
+        const raw = await geminiGenerate(geminiKey, buildNGCPPrompt(today));
+        const json = extractJSON(raw);
+        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Gemini fallback OK"); }
+      } catch (e) { console.warn("[power] NGCP Gemini fallback failed:", e.message); }
+    }
+  }
 
   let result = null;
   let source = null;
@@ -296,7 +371,7 @@ async function handlePower(res) {
       grid_status: ngcpData.grid_status,
       interruptions: meralcoData.interruptions,
       last_updated: today,
-      sources: ['company.meralco.com.ph (direct)', 'ngcp.ph (via Gemini)']
+      sources: ['company.meralco.com.ph (direct)', 'ngcp.ph (direct)']
     };
     source = "direct+gemini";
   }
