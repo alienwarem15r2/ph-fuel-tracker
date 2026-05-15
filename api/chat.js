@@ -821,45 +821,48 @@ function parseMeralcoAlertInterruptions(html) {
   // Find the mld-report-wrapper section
   const wStart = html.indexOf('class="mld-report-wrapper"');
   if (wStart === -1) {
-    return [{ city: 'Metro Manila', barangay: 'See Meralco advisory', street: null,
+    return [{ city: 'Metro Manila Area', barangay: 'See Meralco advisory', street: null,
               date, time: 'Multiple windows', reason: alertLabel, type: 'emergency' }];
   }
-  const wSection = html.substring(wStart, wStart + 100000);
+  const wSection = html.substring(wStart, wStart + 150000);
 
-  // Extract time slots from h1 tags
-  const timeSlots = [];
-  for (const m of wSection.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)) {
-    const t = m[1].replace(/<[^>]+>/g, '').trim();
-    if (/between/i.test(t)) { timeSlots.push(t); if (timeSlots.length >= 8) break; }
-  }
+  // Split by <h1> to get one section per time slot.
+  // Structure: <h1>time</h1><div class="faq-accordion"><div class="faq-item"><div class="faq-header"><h2>PROVINCE</h2>...
+  const sections = wSection.split(/<h1[^>]*>/i).slice(1); // skip content before first h1
 
-  // Extract province/city names: look for ALL-CAPS words in plain text
-  const KNOWN_AREAS = ['BULACAN','METRO MANILA','CAVITE','LAGUNA','RIZAL PROVINCE','QUEZON PROVINCE','PAMPANGA','BATANGAS','ANTIPOLO'];
-  const plainText = wSection.replace(/<[^>]+>/g, ' ');
-  const areaSet = new Set();
-  for (const area of KNOWN_AREAS) { if (plainText.includes(area)) areaSet.add(area); }
-  // Also catch any unlisted ALL-CAPS location names (3+ words or 6+ chars)
-  for (const m of plainText.matchAll(/\b([A-Z]{5,}(?:\s[A-Z]{2,})*)\b/g)) {
-    const t = m[1].trim();
-    if (t.length <= 30 && !/^(BETWEEN|PORTIONS|CIRCUIT|WITHIN|ALONG|FROM|WITH|THEN|AND|THE)$/.test(t)) {
-      areaSet.add(t); if (areaSet.size >= 8) break;
+  const interruptions = [];
+  for (const section of sections.slice(0, 10)) {
+    // Time slot text is before </h1>
+    const slotM = section.match(/^([\s\S]*?)<\/h1>/i);
+    if (!slotM) continue;
+    const timeSlot = slotM[1].replace(/<[^>]+>/g, '').trim();
+    if (!/between/i.test(timeSlot)) continue;
+
+    // Province/area names are in <h2> inside each faq-header within this section
+    const provinces = [];
+    for (const m of section.matchAll(/<div[^>]*class="[^"]*faq-header[^"]*"[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>/gi)) {
+      const name = m[1].replace(/<[^>]+>/g, '').trim();
+      if (name) provinces.push(name);
     }
-  }
-  const areas = [...areaSet].slice(0, 6).join(', ') || 'Affected areas';
-  const slotSummary = timeSlots.length > 0
-    ? timeSlots[0] + (timeSlots.length > 1 ? ` (+${timeSlots.length - 1} more)` : '')
-    : 'Multiple time windows';
 
-  // One summary card for the entire alert event
-  return [{
-    city: 'Metro Manila Area',
-    barangay: areas,
-    street: null,
-    date,
-    time: slotSummary,
-    reason: `${alertLabel} · ${timeSlots.length || '?'} MLD window(s)`,
-    type: 'emergency'
-  }];
+    interruptions.push({
+      city: 'Metro Manila Area',
+      barangay: provinces.length > 0 ? provinces.join(', ') : 'See Meralco advisory',
+      street: null,
+      date,
+      time: timeSlot,
+      reason: alertLabel,
+      type: 'emergency'
+    });
+  }
+
+  // Fallback if structure not matched
+  if (interruptions.length === 0) {
+    return [{ city: 'Metro Manila Area', barangay: 'Multiple provinces — see Meralco advisory', street: null,
+              date, time: 'Multiple windows', reason: alertLabel, type: 'emergency' }];
+  }
+
+  return interruptions;
 }
 
 function parseMeralcoMaintenanceInterruptions(html) {
