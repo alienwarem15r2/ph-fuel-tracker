@@ -797,7 +797,7 @@ function buildH2H(d) {
     { label:'RON 95',     petron: p.petron&&p.petron.ron95,       shell: p.shell&&p.shell.ron95,       unioil: p.unioil&&p.unioil.ron95 },
     { label:'Diesel std', petron: p.petron&&p.petron.diesel_std,  shell: p.shell&&p.shell.diesel_std,  unioil: p.unioil&&p.unioil.diesel_std },
     { label:'Diesel prem',petron: p.petron&&p.petron.diesel_prem, shell: p.shell&&p.shell.diesel_prem, unioil: null },
-    { label:'RON 97/100', petron: p.petron&&p.petron.ron100,      shell: p.shell&&p.shell.ron97,       unioil: p.unioil&&(p.unioil.ron95||null) },
+    { label:'RON 97/100', petron: p.petron&&p.petron.ron100,      shell: p.shell&&p.shell.ron97,       unioil: p.unioil&&(p.unioil.ron100||null) },
   ];
 
   var html = '';
@@ -810,13 +810,13 @@ function buildH2H(d) {
     var savings = (secondMin - minVal).toFixed(2);
 
     function cell(v) {
-      if (!v) return '<td><span style="font-size:11px;color:var(--text3);">N/A</span></td>';
-      return v === minVal
-        ? '<td><span class="h2h-winner">₱' + v.toFixed(2) + '</span></td>'
-        : '<td><span class="h2h-loser">₱' + v.toFixed(2) + '</span></td>';
-    }
+     if (!v || v < 50) return '<td><span style="font-size:11px;color:var(--text3);">N/A</span></td>';
+     return v === minVal
+    ? '<td><span class="h2h-winner">₱' + v.toFixed(2) + '</span></td>'
+    : '<td><span class="h2h-loser">₱' + v.toFixed(2) + '</span></td>';
+}
     html += '<tr><td>' + r.label + '</td>' + cell(r.petron) + cell(r.shell) + cell(r.unioil) +
-      '<td><span class="h2h-save">' + cheapestLabel + ' −₱' + savings + '</span></td></tr>';
+      '<td><span class="h2h-save">' + cheapestLabel + ' saves ₱' + savings + '</span></td></tr>';
   });
   document.getElementById('h2h-tbody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:var(--text3);">Data unavailable</td></tr>';
 
