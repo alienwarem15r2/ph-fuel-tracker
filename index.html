@@ -287,7 +287,7 @@
     </div>
 
     <!-- Brand price cards -->
-    <div class="two-col">
+    <div class="three-col">
       <div class="panel" style="padding:0;overflow:hidden;" id="petron-panel">
         <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
           <div class="panel-title" style="margin:0;">Petron</div>
@@ -297,12 +297,24 @@
           <div class="bp-row"><div style="font-size:12px;color:var(--text3);padding:12px;text-align:center;width:100%;">Loading…</div></div>
         </div>
       </div>
+      
       <div class="panel" style="padding:0;overflow:hidden;" id="shell-panel">
         <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
           <div class="panel-title" style="margin:0;">Shell</div>
           <span style="font-size:11px;color:var(--text3);">800+ stations · <span class="brand-region-label">NCR</span></span>
         </div>
         <div id="shell-products">
+          <div class="bp-row"><div style="font-size:12px;color:var(--text3);padding:12px;text-align:center;width:100%;">Loading…</div></div>
+        </div>
+      </div>
+      
+      <!-- NEW: Unioil panel -->
+      <div class="panel" style="padding:0;overflow:hidden;" id="unioil-panel">
+        <div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+          <div class="panel-title" style="margin:0;">Unioil</div>
+          <span style="font-size:11px;color:var(--text3);">NCR</span>
+        </div>
+        <div id="unioil-products">
           <div class="bp-row"><div style="font-size:12px;color:var(--text3);padding:12px;text-align:center;width:100%;">Loading…</div></div>
         </div>
       </div>
@@ -825,40 +837,75 @@ function buildH2H(d) {
 }
 
 function buildBrandCards(d) {
-  if (!d.prices) return;
+  if (!d || !d.prices) return;
   var p = d.prices;
-  var adj = d.doe_adjustment;
-  var gAdj = adj && adj.gasoline_ron91_95 ? adj.gasoline_ron91_95 : '';
-  var dAdj = adj && adj.diesel_std ? adj.diesel_std : '';
-  var gDir = gAdj.startsWith('+') ? 'up' : 'down';
-  var dDir = dAdj.startsWith('-') ? 'down' : 'up';
-  var gSym = gDir === 'up' ? '▲' : '▼';
-  var dSym = dDir === 'down' ? '▼' : '▲';
-
-  function bpRow(dotColor, name, grade, tag, priceId, chgClass, chgText) {
-    return '<div class="bp-row"><div class="bp-left"><div class="bp-dot" style="background:' + dotColor + ';"></div><div><div class="bp-name">' + name + '</div><div class="bp-grade">' + grade + ' <span class="grade-tag ' + tag + '">' + (['tag-std','tag-prem','tag-top'].indexOf(tag)>=0?tag.replace('tag-',''):tag) + '</span></div></div></div><div class="bp-right"><div class="bp-price">' + priceId + '</div><div class="bp-chg ' + chgClass + '">' + chgText + '</div></div></div>';
+  var adj = d.doe_adjustment || {};
+  
+  // Build adjustment strings (handle null)
+  var gAdj = adj.gasoline_ron91_95 || '0.00';
+  var dAdj = adj.diesel_std || '0.00';
+  var kAdj = adj.kerosene || '0.00';
+  
+  var gDir = String(gAdj).startsWith('+') ? 'up' : 'down';
+  var dDir = String(dAdj).startsWith('+') ? 'up' : 'down';
+  var kDir = String(kAdj).startsWith('+') ? 'up' : 'down';
+  
+  // Helper to format change text
+  function chgText(adjustment, direction) {
+    if (!adjustment || adjustment === '0.00' || adjustment === '0') {
+      return '<span style="font-size:11px;color:var(--text3);">No change</span>';
+    }
+    var sym = direction === 'up' ? '▲' : '▼';
+    return '<span class="bp-chg ' + direction + '">' + sym + ' ' + adjustment.replace('+','') + '/L</span>';
   }
 
-  if (p.petron) {
-    var petronHTML = '';
-    if (p.petron.ron91)       petronHTML += bpRow('#6b6a65','Petron Gasul','Unleaded 91','tag-std','₱'+(p.petron.ron91).toFixed(2),gDir,gSym+' '+gAdj+'/L');
-    if (p.petron.ron95)       petronHTML += bpRow('#1a4fa0','Petron XCS','Unleaded 95','tag-prem','₱'+(p.petron.ron95).toFixed(2),gDir,gSym+' '+gAdj+'/L');
-    if (p.petron.ron100)      petronHTML += bpRow('#7057d6','Petron Blaze 100','RON 100','tag-top','₱'+(p.petron.ron100).toFixed(2),gDir,gSym+' '+gAdj+'/L');
-    if (p.petron.diesel_std)  petronHTML += bpRow('#6b6a65','Petron Diesel Max','Diesel','tag-std','₱'+(p.petron.diesel_std).toFixed(2),dDir,dSym+' '+dAdj+'/L');
-    if (p.petron.diesel_prem) petronHTML += bpRow('#1a7a52','Petron Turbo Diesel','Diesel · premium','tag-prem','₱'+(p.petron.diesel_prem).toFixed(2),dDir,dSym+' '+dAdj+'/L');
-    if (p.petron.kerosene)    petronHTML += bpRow('#c47d00','Petron Kerosene','Kerosene','tag-std','₱'+(p.petron.kerosene).toFixed(2),'down','▼ −'+Math.abs(parseFloat(adj&&adj.kerosene||0)).toFixed(2)+'/L');
-    if (petronHTML) document.getElementById('petron-products').innerHTML = petronHTML;
+  function bpRow(dotColor, name, grade, tag, price, chgHtml) {
+    if (!price || price < 1) return ''; // Skip if no price
+    return '<div class="bp-row"><div class="bp-left"><div class="bp-dot" style="background:' + dotColor + ';"></div><div><div class="bp-name">' + name + '</div><div class="bp-grade">' + grade + ' <span class="grade-tag ' + tag + '">' + (tag === 'tag-std' ? 'std' : tag === 'tag-prem' ? 'prem' : 'top') + '</span></div></div></div><div class="bp-right"><div class="bp-price">₱' + price.toFixed(2) + '</div>' + chgHtml + '</div></div>';
   }
 
-  if (p.shell) {
-    var shellHTML = '';
-    if (p.shell.ron91)       shellHTML += bpRow('#b83232','Shell FuelSave Unleaded','RON 91','tag-std','₱'+(p.shell.ron91).toFixed(2),gDir,gSym+' '+gAdj+'/L');
-    if (p.shell.ron95)       shellHTML += bpRow('#1a4fa0','Shell V-Power Nitro+','RON 95','tag-prem','₱'+(p.shell.ron95).toFixed(2),gDir,gSym+' '+gAdj+'/L');
-    if (p.shell.ron97)       shellHTML += bpRow('#7057d6','Shell V-Power Racing','RON 97','tag-top','₱'+(p.shell.ron97).toFixed(2),gDir,gSym+' '+gAdj+'/L');
-    if (p.shell.diesel_std)  shellHTML += bpRow('#6b6a65','Shell FuelSave Diesel','Diesel','tag-std','₱'+(p.shell.diesel_std).toFixed(2),dDir,dSym+' '+dAdj+'/L');
-    if (p.shell.diesel_prem) shellHTML += bpRow('#1a7a52','Shell V-Power Diesel','Diesel · premium','tag-prem','₱'+(p.shell.diesel_prem).toFixed(2),dDir,dSym+' '+dAdj+'/L');
-    if (p.shell.kerosene)    shellHTML += bpRow('#c47d00','Shell Kerosene','Kerosene','tag-std','₱'+(p.shell.kerosene).toFixed(2),'down','▼ −'+Math.abs(parseFloat(adj&&adj.kerosene||0)).toFixed(2)+'/L');
-    if (shellHTML) document.getElementById('shell-products').innerHTML = shellHTML;
+  // ── PETRON ──
+  var petronHTML = '';
+  if (p.petron && p.petron.ron91)       petronHTML += bpRow('#6b6a65','Petron Gasul','Unleaded 91','tag-std',p.petron.ron91, chgText(gAdj, gDir));
+  if (p.petron && p.petron.ron95)       petronHTML += bpRow('#1a4fa0','Petron XCS','Unleaded 95','tag-prem',p.petron.ron95, chgText(gAdj, gDir));
+  if (p.petron && p.petron.ron100)      petronHTML += bpRow('#7057d6','Petron Blaze 100','RON 100','tag-top',p.petron.ron100, chgText(gAdj, gDir));
+  if (p.petron && p.petron.diesel_std)  petronHTML += bpRow('#6b6a65','Petron Diesel Max','Diesel','tag-std',p.petron.diesel_std, chgText(dAdj, dDir));
+  if (p.petron && p.petron.diesel_prem) petronHTML += bpRow('#1a7a52','Petron Turbo Diesel','Diesel · premium','tag-prem',p.petron.diesel_prem, chgText(dAdj, dDir));
+  if (p.petron && p.petron.kerosene)    petronHTML += bpRow('#c47d00','Petron Kerosene','Kerosene','tag-std',p.petron.kerosene, chgText(kAdj, kDir));
+  if (petronHTML) document.getElementById('petron-products').innerHTML = petronHTML;
+
+  // ── SHELL ──
+  var shellHTML = '';
+  if (p.shell && p.shell.ron91)       shellHTML += bpRow('#b83232','Shell FuelSave Unleaded','RON 91','tag-std',p.shell.ron91, chgText(gAdj, gDir));
+  if (p.shell && p.shell.ron95)       shellHTML += bpRow('#1a4fa0','Shell V-Power Nitro+','RON 95','tag-prem',p.shell.ron95, chgText(gAdj, gDir));
+  if (p.shell && p.shell.ron97)       shellHTML += bpRow('#7057d6','Shell V-Power Racing','RON 97','tag-top',p.shell.ron97, chgText(gAdj, gDir));
+  if (p.shell && p.shell.diesel_std)  shellHTML += bpRow('#6b6a65','Shell FuelSave Diesel','Diesel','tag-std',p.shell.diesel_std, chgText(dAdj, dDir));
+  if (p.shell && p.shell.diesel_prem) shellHTML += bpRow('#1a7a52','Shell V-Power Diesel','Diesel · premium','tag-prem',p.shell.diesel_prem, chgText(dAdj, dDir));
+  if (p.shell && p.shell.kerosene)    shellHTML += bpRow('#c47d00','Shell Kerosene','Kerosene','tag-std',p.shell.kerosene, chgText(kAdj, kDir));
+  if (shellHTML) document.getElementById('shell-products').innerHTML = shellHTML;
+
+  // ── UNIOIL ──
+  var unioilHTML = '';
+  if (p.unioil && p.unioil.ron91)      unioilHTML += bpRow('#E65100','Unioil Unleaded 91','RON 91','tag-std',p.unioil.ron91, chgText(gAdj, gDir));
+  if (p.unioil && p.unioil.ron95)      unioilHTML += bpRow('#E65100','Unioil Unleaded 95','RON 95','tag-prem',p.unioil.ron95, chgText(gAdj, gDir));
+  if (p.unioil && p.unioil.diesel_std) unioilHTML += bpRow('#E65100','Unioil Diesel','Diesel','tag-std',p.unioil.diesel_std, chgText(dAdj, dDir));
+  if (unioilHTML) {
+    // Add Unioil panel if not exists, or update existing
+    var unioilPanel = document.getElementById('unioil-panel');
+    if (!unioilPanel) {
+      // Create Unioil panel dynamically
+      var container = document.querySelector('.two-col');
+      if (container) {
+        var newPanel = document.createElement('div');
+        newPanel.className = 'panel';
+        newPanel.id = 'unioil-panel';
+        newPanel.style.cssText = 'padding:0;overflow:hidden;';
+        newPanel.innerHTML = '<div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;"><div class="panel-title" style="margin:0;">Unioil</div><span style="font-size:11px;color:var(--text3);">NCR</span></div><div id="unioil-products">' + unioilHTML + '</div>';
+        container.appendChild(newPanel);
+      }
+    } else {
+      document.getElementById('unioil-products').innerHTML = unioilHTML;
+    }
   }
 }
 
