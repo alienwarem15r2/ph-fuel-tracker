@@ -259,7 +259,7 @@ async function handleFuel(res, region) {
   return res.status(200).json(result);
 }
 
-/* ── POWER (Gemini → Groq → Unavailable) ── */
+/* ── POWER (Direct Meralco scrape + Gemini NGCP → Groq → Unavailable) ── */
 async function handlePower(res) {
   const cached = getCache("power");
   if (cached) {
@@ -268,11 +268,79 @@ async function handlePower(res) {
   }
 
   const today = phDate();
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const groqKey   = process.env.GROQ_API_KEY;
+
+  // Run Meralco direct scrape + NGCP status query in parallel
+  const [meralcoResult, ngcpResult] = await Promise.allSettled([
+    fetchMeralcoPages(),
+    geminiKey
+      ? geminiGenerate(geminiKey, buildNGCPPrompt(today)).then(r => extractJSON(r))
+      : Promise.resolve(null)
+  ]);
+
+  const meralcoData = meralcoResult.status === 'fulfilled' ? meralcoResult.value : null;
+  const ngcpData    = ngcpResult.status   === 'fulfilled' ? ngcpResult.value    : null;
+
+  if (meralcoData)  console.log("[power] Meralco direct OK, interruptions:", meralcoData.interruptions.length);
+  else              console.warn("[power] Meralco direct failed:", meralcoResult.reason?.message);
+  if (!ngcpData)    console.warn("[power] NGCP Gemini failed:", ngcpResult.reason?.message);
+
   let result = null;
   let source = null;
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey && !result) {
+  // Case 1: have both scraped Meralco data and NGCP status
+  if (meralcoData && ngcpData && ngcpData.grid_status) {
+    result = {
+      grid_status: ngcpData.grid_status,
+      interruptions: meralcoData.interruptions,
+      last_updated: today,
+      sources: ['company.meralco.com.ph (direct)', 'ngcp.ph (via Gemini)']
+    };
+    source = "direct+gemini";
+  }
+
+  // Case 2: Meralco scraped OK but NGCP query failed — try Groq for NGCP
+  if (!result && meralcoData) {
+    if (groqKey) {
+      try {
+        const raw = await groqSearch(buildNGCPPrompt(today));
+        const json = extractJSON(raw);
+        if (!json.error && json.grid_status) {
+          result = {
+            grid_status: json.grid_status,
+            interruptions: meralcoData.interruptions,
+            last_updated: today,
+            sources: ['company.meralco.com.ph (direct)', 'ngcp.ph (via Groq)']
+          };
+          source = "direct+groq";
+        }
+      } catch (e) {
+        console.warn("[power] Groq NGCP fallback failed:", e.message);
+      }
+    }
+    // Even if NGCP fails, still return Meralco data with "normal" grid
+    if (!result) {
+      result = {
+        grid_status: {
+          level: "normal",
+          title: "Luzon Grid — Status Unknown",
+          subtitle: "NGCP live status unavailable. Grid status unconfirmed.",
+          color: "#6b6a65",
+          bg: "#f0efe9",
+          border: "rgba(0,0,0,.1)",
+          alert_times: []
+        },
+        interruptions: meralcoData.interruptions,
+        last_updated: today,
+        sources: ['company.meralco.com.ph (direct)']
+      };
+      source = "direct";
+    }
+  }
+
+  // Case 3: Meralco scrape failed — fall back to full Gemini power prompt
+  if (!result && geminiKey) {
     try {
       const raw = await geminiGenerate(geminiKey, buildPowerPrompt(today));
       const json = extractJSON(raw);
@@ -281,23 +349,21 @@ async function handlePower(res) {
         source = "gemini";
       }
     } catch (e) {
-      console.warn("[power] Gemini failed:", e.message);
+      console.warn("[power] Gemini full prompt failed:", e.message);
     }
   }
 
-  if (!result) {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey) {
-      try {
-        const raw = await groqSearch(buildPowerPrompt(today));
-        const json = extractJSON(raw);
-        if (!json.error && json.grid_status) {
-          result = json;
-          source = "groq";
-        }
-      } catch (e) {
-        console.warn("[power] Groq fallback failed:", e.message);
+  // Case 4: All AI failed — try Groq full prompt
+  if (!result && groqKey) {
+    try {
+      const raw = await groqSearch(buildPowerPrompt(today));
+      const json = extractJSON(raw);
+      if (!json.error && json.grid_status) {
+        result = json;
+        source = "groq";
       }
+    } catch (e) {
+      console.warn("[power] Groq full prompt failed:", e.message);
     }
   }
 
@@ -698,6 +764,150 @@ async function fetchNextWeekForecast(today, geminiKey) {
     console.warn("[forecast] Gemini failed:", e.message);
     return null;
   }
+}
+
+/* ── MERALCO DIRECT SCRAPER ── */
+const MERALCO_BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Cache-Control': 'no-cache'
+};
+
+async function fetchMeralcoPages() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const [alertRes, maintRes] = await Promise.all([
+      fetch('https://company.meralco.com.ph/news-and-advisories/yellow-and-red-alert-locations',
+        { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS }),
+      fetch('https://company.meralco.com.ph/news-and-advisories/maintenance-schedule',
+        { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS })
+    ]);
+    clearTimeout(timeout);
+    if (!alertRes.ok) throw new Error(`Alert page HTTP ${alertRes.status}`);
+    if (!maintRes.ok) throw new Error(`Maint page HTTP ${maintRes.status}`);
+    const [alertHtml, maintHtml] = await Promise.all([alertRes.text(), maintRes.text()]);
+    return {
+      interruptions: [
+        ...parseMeralcoAlertInterruptions(alertHtml),
+        ...parseMeralcoMaintenanceInterruptions(maintHtml)
+      ]
+    };
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+function parseMeralcoAlertInterruptions(html) {
+  html = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // Determine alert level from first h3
+  const h3m = html.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
+  const h3text = (h3m ? h3m[1] : '').replace(/<[^>]+>/g, '');
+  const isRed    = /red\s+alert/i.test(h3text);
+  const isYellow = /yellow\s+alert/i.test(h3text);
+  if (!isRed && !isYellow) return [];
+
+  const alertLabel = isRed
+    ? 'Red Alert — Manual Load Dropping (MLD)'
+    : 'Yellow Alert — Possible Load Reduction';
+
+  // Date (e.g. "MAY 15, 2026")
+  const dateM = html.match(/\b((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\w*\s+\d{1,2},\s+\d{4})/i);
+  const date  = dateM ? dateM[1] : '';
+
+  // Find the mld-report-wrapper section
+  const wStart = html.indexOf('class="mld-report-wrapper"');
+  if (wStart === -1) {
+    return [{ city: 'Metro Manila', barangay: 'See Meralco advisory', street: null,
+              date, time: 'Multiple windows', reason: alertLabel, type: 'emergency' }];
+  }
+  const wSection = html.substring(wStart, wStart + 100000);
+
+  // Extract time slots from h1 tags
+  const timeSlots = [];
+  for (const m of wSection.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)) {
+    const t = m[1].replace(/<[^>]+>/g, '').trim();
+    if (/between/i.test(t)) { timeSlots.push(t); if (timeSlots.length >= 8) break; }
+  }
+
+  // Extract province/city names: look for ALL-CAPS words in plain text
+  const KNOWN_AREAS = ['BULACAN','METRO MANILA','CAVITE','LAGUNA','RIZAL PROVINCE','QUEZON PROVINCE','PAMPANGA','BATANGAS','ANTIPOLO'];
+  const plainText = wSection.replace(/<[^>]+>/g, ' ');
+  const areaSet = new Set();
+  for (const area of KNOWN_AREAS) { if (plainText.includes(area)) areaSet.add(area); }
+  // Also catch any unlisted ALL-CAPS location names (3+ words or 6+ chars)
+  for (const m of plainText.matchAll(/\b([A-Z]{5,}(?:\s[A-Z]{2,})*)\b/g)) {
+    const t = m[1].trim();
+    if (t.length <= 30 && !/^(BETWEEN|PORTIONS|CIRCUIT|WITHIN|ALONG|FROM|WITH|THEN|AND|THE)$/.test(t)) {
+      areaSet.add(t); if (areaSet.size >= 8) break;
+    }
+  }
+  const areas = [...areaSet].slice(0, 6).join(', ') || 'Affected areas';
+  const slotSummary = timeSlots.length > 0
+    ? timeSlots[0] + (timeSlots.length > 1 ? ` (+${timeSlots.length - 1} more)` : '')
+    : 'Multiple time windows';
+
+  // One summary card for the entire alert event
+  return [{
+    city: 'Metro Manila Area',
+    barangay: areas,
+    street: null,
+    date,
+    time: slotSummary,
+    reason: `${alertLabel} · ${timeSlots.length || '?'} MLD window(s)`,
+    type: 'emergency'
+  }];
+}
+
+function parseMeralcoMaintenanceInterruptions(html) {
+  html = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // Titles: <h3 class="field-content..."><a ...>DATE - City (Area)</a>
+  const titleRx    = /<h3[^>]*class="[^"]*field-content[^"]*"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/gi;
+  // Cities: views-field-field-service-maintenance-loc ... field-content > text
+  const cityRx     = /views-field-field-service-maintenance-loc[\s\S]{0,400}?class="field-content"[^>]*>\s*([^<\n]{1,60}?)\s*<\/div>/gi;
+  // First time slot: first STRONG inside views-field-body
+  const timeRx     = /views-field-body[\s\S]{0,800}?<strong>(BETWEEN[\s\S]*?)<\/strong>/gi;
+
+  const titles = [...html.matchAll(titleRx)];
+  const cities = [...html.matchAll(cityRx)];
+  const times  = [...html.matchAll(timeRx)];
+
+  const interruptions = [];
+  for (let i = 0; i < Math.min(titles.length, 8); i++) {
+    const full   = titles[i][1].trim();
+    const parts  = full.match(/^(.+?,\s*\d{4})\s*-\s*(.+)$/);
+    const date   = parts ? parts[1].trim() : full;
+    const locFull = parts ? parts[2].trim() : full;
+    const city   = (cities[i] ? cities[i][1].trim() : null) || locFull.split('(')[0].trim();
+    const bgyM   = locFull.match(/\(([^)]+)\)/);
+    const barangay = bgyM ? bgyM[1] : locFull;
+    const timeRaw = times[i] ? times[i][1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : null;
+    // Keep only the time window part (before the dash/circuit info)
+    const timeSlot  = timeRaw ? timeRaw.replace(/\s*[–\-]\s*PORTIONS?.*/i, '').trim().substring(0, 80) : 'See schedule';
+    const circuitM = timeRaw ? timeRaw.match(/PORTIONS?\s+OF\s+(CIRCUIT\s+\S+)/i) : null;
+    const circuit  = circuitM ? circuitM[1].trim() : null;
+
+    interruptions.push({
+      city,
+      barangay,
+      street: null,
+      date,
+      time: timeSlot,
+      reason: 'Scheduled maintenance' + (circuit ? ` · ${circuit}` : ''),
+      type: 'scheduled'
+    });
+  }
+  return interruptions;
+}
+
+function buildNGCPPrompt(today) {
+  return `Today is ${today} Philippines. Search ngcp.ph, NGCP's Facebook page, or Philippine news for the CURRENT Luzon grid alert status: Normal, Yellow Alert (reserve deficiency, no brownout), or Red Alert (rotating brownouts active). If alert, include time windows. Return ONLY compact JSON:
+{"grid_status":{"level":"normal","title":"Luzon Grid — Normal","subtitle":"No active grid alert as of ${today}","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","alert_times":[]}}
+Color rules — yellow: color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" · red: color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" · normal: color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)".`;
 }
 
 function buildPowerPrompt(today) {
