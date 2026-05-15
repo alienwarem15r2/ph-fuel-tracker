@@ -470,6 +470,83 @@ async function handlePower(res) {
 
 
 
+/* ── MAYNILAD SCRAPER ── */
+async function fetchMayniladAdvisories() {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch('https://www.mayniladwater.com.ph/', { signal: ctrl.signal, headers: MERALCO_BROWSER_HEADERS });
+    clearTimeout(t);
+    if (!r.ok) throw new Error(`Maynilad HTTP ${r.status}`);
+    return parseMayniladAdvisories(await r.text());
+  } catch(e) { clearTimeout(t); throw e; }
+}
+
+function parseMayniladAdvisories(html) {
+  const m = html.match(/<ul[^>]+class="[^"]*homepage-advisories[^"]*"[^>]*>([\s\S]*?)<\/ul>/i);
+  if (!m) throw new Error('homepage-advisories not found');
+  const items = [];
+  for (const liM of m[1].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)) {
+    const spanM = liM[1].match(/<span[^>]*>([^<]+)<\/span>/i);
+    const typeLabel = spanM ? spanM[1].trim() : 'Scheduled';
+    const text = liM[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const parts = text.split(/\s{2,}/);
+    const date = parts[0] || '';
+    const area = parts.slice(1).join(' ').trim();
+    const tl = typeLabel.toLowerCase();
+    const type = tl.includes('emergency') ? 'emergency' : tl.includes('rotational') ? 'rotational' : tl.includes('septic') ? 'maintenance' : 'scheduled';
+    const cityRaw = area.split(/[;,]|\bat\b/i)[0].trim().replace(/\s+city\s*$/i, '').trim();
+    items.push({ utility: 'Maynilad', type, typeLabel, city: cityRaw || 'Metro Manila', area, date });
+  }
+  return items;
+}
+
+/* ── MANILA WATER SCRAPER ── */
+async function fetchManilaWaterAdvisories() {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch('https://www.manilawater.com/customers/service-advisories', { signal: ctrl.signal, headers: MERALCO_BROWSER_HEADERS });
+    clearTimeout(t);
+    if (!r.ok) throw new Error(`Manila Water HTTP ${r.status}`);
+    return parseManilaWaterAdvisories(await r.text());
+  } catch(e) { clearTimeout(t); throw e; }
+}
+
+function parseManilaWaterAdvisories(html) {
+  const items = [];
+  for (const tableM of html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const before = html.slice(Math.max(0, tableM.index - 600), tableM.index);
+    const isEmergency = /emergency/i.test(before);
+    const typeLabel = isEmergency ? 'Emergency' : 'Maintenance';
+    const type = isEmergency ? 'emergency' : 'scheduled';
+    const rows = [];
+    for (const rowM of tableM[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [];
+      for (const cellM of rowM[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi))
+        cells.push(cellM[1].replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim());
+      if (cells.length >= 4) rows.push(cells);
+    }
+    for (const row of rows.slice(1)) {
+      const [start, end, cityRaw, location, activity, affectedAreas] = row;
+      if (!cityRaw) continue;
+      const startDate = (start||'').split(' ')[0];
+      const endDate   = (end||'').split(' ')[0];
+      const startTime = (start||'').replace(/^\S+\s*/,'');
+      const endTime   = (end||'').replace(/^\S+\s*/,'');
+      const city = cityRaw.replace(/\s*,\s*\w[\w\s]*$/, '').trim();
+      items.push({
+        utility: 'Manila Water', type, typeLabel, city,
+        area: [location, affectedAreas].filter(Boolean).join(' · '),
+        from: startDate, to: endDate,
+        time: startTime && endTime ? `${startTime} – ${endTime}` : startTime || '',
+        reason: activity || ''
+      });
+    }
+  }
+  return items;
+}
+
 /* ── WATER SUPPLY ── */
 async function handleWater(res) {
   const cached = getCache('water');
@@ -477,42 +554,63 @@ async function handleWater(res) {
     return res.status(200).json({ ...cached, _meta: { source: 'cache', cached_at: new Date(apiCache.water.ts).toISOString() } });
   }
 
-  const today = new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric' });
+  const today = phDate();
   const geminiKey = process.env.GEMINI_API_KEY;
-  let result = null;
-  let source = 'unavailable';
 
+  const [mayniladRes, manilaWaterRes] = await Promise.allSettled([
+    fetchMayniladAdvisories(),
+    fetchManilaWaterAdvisories()
+  ]);
+
+  let interruptions = [];
+  const sources = [];
+
+  if (mayniladRes.status === 'fulfilled') {
+    interruptions.push(...mayniladRes.value);
+    sources.push('mayniladwater.com.ph (direct)');
+    console.log('[water] Maynilad direct OK:', mayniladRes.value.length, 'items');
+  } else {
+    console.warn('[water] Maynilad direct failed:', mayniladRes.reason?.message);
+  }
+
+  if (manilaWaterRes.status === 'fulfilled') {
+    interruptions.push(...manilaWaterRes.value);
+    sources.push('manilawater.com (direct)');
+    console.log('[water] Manila Water direct OK:', manilaWaterRes.value.length, 'items');
+  } else {
+    console.warn('[water] Manila Water direct failed:', manilaWaterRes.reason?.message);
+  }
+
+  // Gemini: always used for dam level; fills in interruptions if a scraper failed
+  let damStatus = null;
   if (geminiKey) {
     try {
       const raw = await geminiGenerate(geminiKey, buildWaterPrompt(today));
       const json = extractJSON(raw);
       if (!json.error && json.dam_status) {
-        result = json;
-        source = 'gemini';
-        console.log('[water] Gemini OK, dam level:', json.dam_status.level);
+        damStatus = json.dam_status;
+        if (mayniladRes.status !== 'fulfilled' && json.interruptions)
+          interruptions.push(...json.interruptions.filter(i => i.utility === 'Maynilad'));
+        if (manilaWaterRes.status !== 'fulfilled' && json.interruptions)
+          interruptions.push(...json.interruptions.filter(i => i.utility === 'Manila Water'));
+        sources.push('gemini (dam)');
+        console.log('[water] Gemini dam OK, level:', json.dam_status.level);
       }
-    } catch (e) {
-      console.warn('[water] Gemini failed:', e.message);
-    }
+    } catch(e) { console.warn('[water] Gemini failed:', e.message); }
   }
 
-  if (!result) {
-    result = {
-      dam_status: {
-        level: null, nhwl: 212, mddl: 180, trend: 'unknown',
-        title: 'Angat Dam — Level Unavailable',
-        subtitle: 'Live data temporarily unavailable. Check MWSS for current levels.',
-        color: '#6b6a65', bg: '#f0efe9', border: 'rgba(107,106,101,.2)',
-        as_of: today
-      },
-      interruptions: [],
-      last_updated: today,
-      sources: ['unavailable']
+  if (!damStatus) {
+    damStatus = {
+      level: null, nhwl: 212, mddl: 180, trend: 'unknown',
+      title: 'Angat Dam — Level Unavailable',
+      subtitle: 'Live data temporarily unavailable.',
+      color: '#6b6a65', bg: '#f0efe9', border: 'rgba(107,106,101,.2)',
+      as_of: today
     };
-    source = 'unavailable';
   }
 
-  result._meta = { source, cached_at: new Date().toISOString() };
+  const result = { dam_status: damStatus, interruptions, last_updated: today, sources };
+  result._meta = { source: sources.join(', ') || 'unavailable', cached_at: new Date().toISOString() };
   setCache('water', result);
   res.setHeader('Cache-Control', 'public, max-age=900');
   return res.status(200).json(result);
