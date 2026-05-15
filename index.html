@@ -736,7 +736,10 @@ function applyLiveFuelData(d) {
   var fcHtml = '';
   var today8 = (d.effective_date || '').replace(/[^0-9\-]/g, '');
   // Prefer a future-dated GasWatch advisory over AI forecast
-  var futureAdv = advisories.find(function(a) { return a.date > today8 && a.date.length >= 8; });
+  var currentTitle = advisories.length > 0 ? advisories[0].title : '';
+  var futureAdv = advisories.find(function(a) {
+    return a.date > today8 && a.date.length >= 8 && a.title !== currentTitle;
+  });
   if (futureAdv) {
     fcHtml += '<div class="ann-section-label">Upcoming advisory</div>';
     var fPills = '';
