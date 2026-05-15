@@ -501,52 +501,6 @@ function parseMayniladAdvisories(html) {
   return items;
 }
 
-/* ── MANILA WATER SCRAPER ── */
-async function fetchManilaWaterAdvisories() {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 10000);
-  try {
-    const r = await fetch('https://www.manilawater.com/customers/service-advisories', { signal: ctrl.signal, headers: MERALCO_BROWSER_HEADERS });
-    clearTimeout(t);
-    if (!r.ok) throw new Error(`Manila Water HTTP ${r.status}`);
-    return parseManilaWaterAdvisories(await r.text());
-  } catch(e) { clearTimeout(t); throw e; }
-}
-
-function parseManilaWaterAdvisories(html) {
-  const items = [];
-  for (const tableM of html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
-    const before = html.slice(Math.max(0, tableM.index - 600), tableM.index);
-    const isEmergency = /emergency/i.test(before);
-    const typeLabel = isEmergency ? 'Emergency' : 'Maintenance';
-    const type = isEmergency ? 'emergency' : 'scheduled';
-    const rows = [];
-    for (const rowM of tableM[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
-      const cells = [];
-      for (const cellM of rowM[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi))
-        cells.push(cellM[1].replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim());
-      if (cells.length >= 4) rows.push(cells);
-    }
-    for (const row of rows.slice(1)) {
-      const [start, end, cityRaw, location, activity, affectedAreas] = row;
-      if (!cityRaw) continue;
-      const startDate = (start||'').split(' ')[0];
-      const endDate   = (end||'').split(' ')[0];
-      const startTime = (start||'').replace(/^\S+\s*/,'');
-      const endTime   = (end||'').replace(/^\S+\s*/,'');
-      const city = cityRaw.replace(/\s*,\s*\w[\w\s]*$/, '').trim();
-      items.push({
-        utility: 'Manila Water', type, typeLabel, city,
-        area: [location, affectedAreas].filter(Boolean).join(' · '),
-        from: startDate, to: endDate,
-        time: startTime && endTime ? `${startTime} – ${endTime}` : startTime || '',
-        reason: activity || ''
-      });
-    }
-  }
-  return items;
-}
-
 /* ── WATER SUPPLY ── */
 async function handleWater(res) {
   const cached = getCache('water');
@@ -557,12 +511,15 @@ async function handleWater(res) {
   const today = phDate();
   const geminiKey = process.env.GEMINI_API_KEY;
 
-  const [mayniladRes, manilaWaterRes] = await Promise.allSettled([
+  // Maynilad: direct scrape from homepage (simple static HTML)
+  // Manila Water: uses Next.js RSC with no public API — Gemini reads it via Google Search
+  const [mayniladRes, geminiRes] = await Promise.allSettled([
     fetchMayniladAdvisories(),
-    fetchManilaWaterAdvisories()
+    geminiKey ? geminiGenerate(geminiKey, buildWaterPrompt(today)) : Promise.reject(new Error('No Gemini key'))
   ]);
 
   let interruptions = [];
+  let damStatus = null;
   const sources = [];
 
   if (mayniladRes.status === 'fulfilled') {
@@ -573,30 +530,24 @@ async function handleWater(res) {
     console.warn('[water] Maynilad direct failed:', mayniladRes.reason?.message);
   }
 
-  if (manilaWaterRes.status === 'fulfilled') {
-    interruptions.push(...manilaWaterRes.value);
-    sources.push('manilawater.com (direct)');
-    console.log('[water] Manila Water direct OK:', manilaWaterRes.value.length, 'items');
-  } else {
-    console.warn('[water] Manila Water direct failed:', manilaWaterRes.reason?.message);
-  }
-
-  // Gemini: always used for dam level; fills in interruptions if a scraper failed
-  let damStatus = null;
-  if (geminiKey) {
-    try {
-      const raw = await geminiGenerate(geminiKey, buildWaterPrompt(today));
-      const json = extractJSON(raw);
-      if (!json.error && json.dam_status) {
-        damStatus = json.dam_status;
-        if (mayniladRes.status !== 'fulfilled' && json.interruptions)
+  if (geminiRes.status === 'fulfilled') {
+    const json = extractJSON(geminiRes.value);
+    if (!json.error && json.dam_status) {
+      damStatus = json.dam_status;
+      sources.push('gemini (dam + Manila Water)');
+      console.log('[water] Gemini OK, dam:', json.dam_status.level, 'MW items:', json.interruptions?.length);
+      // Gemini provides Manila Water advisories (direct scrape not possible — Next.js RSC)
+      if (json.interruptions) {
+        interruptions.push(...json.interruptions.filter(i => i.utility === 'Manila Water'));
+        // Also use Gemini Maynilad items if direct scrape failed
+        if (mayniladRes.status !== 'fulfilled')
           interruptions.push(...json.interruptions.filter(i => i.utility === 'Maynilad'));
-        if (manilaWaterRes.status !== 'fulfilled' && json.interruptions)
-          interruptions.push(...json.interruptions.filter(i => i.utility === 'Manila Water'));
-        sources.push('gemini (dam)');
-        console.log('[water] Gemini dam OK, level:', json.dam_status.level);
       }
-    } catch(e) { console.warn('[water] Gemini failed:', e.message); }
+    } else {
+      console.warn('[water] Gemini bad response:', JSON.stringify(json).slice(0, 150));
+    }
+  } else {
+    console.warn('[water] Gemini failed:', geminiRes.reason?.message);
   }
 
   if (!damStatus) {
@@ -617,19 +568,17 @@ async function handleWater(res) {
 }
 
 function buildWaterPrompt(today) {
-  return `Today is ${today} Philippines. Search for these THREE things and return real current data:
+  return `Today is ${today} Philippines. Find TWO things and return real current data:
 
-1. Angat Dam water level — search "MWSS Angat Dam water level ${today}" OR "site:mwss.gov.ph angat dam" for today's elevation in meters. Normal High Water Level (NHWL) is 212m, Minimum Drawdown Level (MDDL) is 180m. Note if level is rising or falling vs yesterday.
+1. Angat Dam water level — search "MWSS Angat Dam water level ${today}" or site:mwss.gov.ph for today's elevation in meters. NHWL=212m, MDDL=180m.
 
-2. Maynilad Water advisories — search "site:mayniladwater.com.ph service interruption" OR "Maynilad water interruption advisory ${today}" for current service interruption notices. List affected city and barangay.
-
-3. Manila Water advisories — search "site:manilawater.com advisory" OR "Manila Water service interruption ${today}" for current notices. List affected city and barangay.
+2. Manila Water service advisories — go to https://www.manilawater.com/customers/service-advisories and read the two tables: "Advisory on Maintenance Activities" and "Advisory on Emergency Works". Each row has: Start datetime, End datetime, Affected City/Municipality, Location of Activity, Activity, Affected Areas. Extract ALL rows from both tables.
 
 Return ONLY compact JSON, no markdown:
-{"dam_status":{"level":207.5,"nhwl":212,"mddl":180,"trend":"falling","title":"Angat Dam — 207.5m","subtitle":"Near normal level. Adequate supply maintained.","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","as_of":"${today}"},"interruptions":[{"utility":"Maynilad","area":"Quezon City","barangay":"Fairview, Commonwealth","date":"${today}","time":"10PM–6AM","reason":"Pipe rehabilitation","type":"scheduled"},{"utility":"Manila Water","area":"Pasig City","barangay":"Kapitolyo","date":"${today}","time":"8AM–5PM","reason":"Maintenance works","type":"scheduled"}],"last_updated":"${today}","sources":["mwss.gov.ph","mayniladwater.com.ph","manilawater.com"]}
+{"dam_status":{"level":207.5,"nhwl":212,"mddl":180,"trend":"falling","title":"Angat Dam — 207.5m","subtitle":"Near normal level.","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","as_of":"${today}"},"interruptions":[{"utility":"Manila Water","typeLabel":"Maintenance","type":"scheduled","city":"Quezon City","area":"Along Palaris St. · UP Campus","from":"2026-05-18","to":"2026-05-19","time":"10:00 p.m. – 04:00 a.m.","reason":"Pipe Crossover Activity"},{"utility":"Manila Water","typeLabel":"Emergency","type":"emergency","city":"Pasig","area":"Kapitolyo St. · Brgy. Kapitolyo","from":"2026-05-16","to":"2026-05-16","time":"8:00 a.m. – 5:00 p.m.","reason":"Emergency Repair"}],"last_updated":"${today}","sources":["mwss.gov.ph","manilawater.com"]}
 
-Dam level color rules: level>=208 color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)" | level>=200 color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" | level>=190 color="#b85a00",bg="#fef0e0",border="rgba(184,90,0,.2)" | level<190 color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" | unknown color="#6b6a65",bg="#f0efe9",border="rgba(107,106,101,.2)".
-For interruptions: utility must be exactly "Maynilad" or "Manila Water". type must be "scheduled" or "emergency". Include barangay names when available. If none found, return empty array.`;
+Dam color rules: level>=208 color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)" | level>=200 color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" | level>=190 color="#b85a00",bg="#fef0e0",border="rgba(184,90,0,.2)" | level<190 color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" | unknown color="#6b6a65",bg="#f0efe9",border="rgba(107,106,101,.2)".
+Use exact dates and times from the table. type="emergency" for Emergency Works table rows, type="scheduled" for Maintenance rows. If no advisories found return empty array.`;
 }/* ── GASWATCH PH DATA.JS SCRAPER ── */
 
 // Extract a JS object/array block starting at `startIdx` in `src` using brace counting.
