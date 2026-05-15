@@ -803,11 +803,13 @@ async function fetchMeralcoPages() {
 function parseMeralcoAlertInterruptions(html) {
   html = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
 
-  // Determine alert level from first h3
-  const h3m = html.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
-  const h3text = (h3m ? h3m[1] : '').replace(/<[^>]+>/g, '');
-  const isRed    = /red\s+alert/i.test(h3text);
-  const isYellow = /yellow\s+alert/i.test(h3text);
+  // Determine alert level — search the article body section, not nav/title text.
+  // Look for "Red Alert Locations" or "Yellow Alert Locations" h3 heading specifically.
+  const articleIdx = html.indexOf('node-field');
+  const checkText  = articleIdx !== -1 ? html.substring(articleIdx, articleIdx + 80000) : html.substring(0, 80000);
+  // Prioritise specific heading pattern to avoid false match from page title "Red & Yellow Alert"
+  const isRed    = /red\s+alert\s+locations/i.test(checkText);
+  const isYellow = !isRed && /yellow\s+alert\s+locations/i.test(checkText);
   if (!isRed && !isYellow) return [];
 
   const alertLabel = isRed
