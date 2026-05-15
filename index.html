@@ -1254,15 +1254,8 @@ function buildCityPriceGrid() {
 var activePowerRegion = 'ncr';
 var activePowerCity = 'All';
 
-/* Static fallback interruptions (used if live data fails) */
-var STATIC_INTERRUPTIONS = [
-  { city:'Caloocan City', barangay:'Bagong Silang, Bagumbong, Camarin, Deparo, Tala', street:'Multiple streets', date:'Recent', time:'Afternoon', reason:'NGCP MLD Event — Luzon Grid insufficient reserve', type:'emergency' },
-  { city:'Quezon City', barangay:'Batasan Hills, Fairview, Greater Lagro, Holy Spirit', street:'Multiple streets', date:'Recent', time:'Afternoon', reason:'NGCP MLD Event', type:'emergency' },
-  { city:'Marikina', barangay:'Concepcion I, Marikina Hts, Nangka, Parang', street:'Multiple streets', date:'Recent', time:'Afternoon', reason:'NGCP MLD Event', type:'emergency' },
-  { city:'Pasig', barangay:'Maybunga, Pinagbuhatan, Rosario, Ugong', street:'Multiple streets', date:'Recent', time:'Afternoon', reason:'NGCP MLD Event', type:'emergency' },
-  { city:'Taguig', barangay:'Lower Bicutan, Maharlika Vill, Signal Village', street:'Multiple streets', date:'Recent', time:'Afternoon', reason:'NGCP MLD Event', type:'emergency' },
-  { city:'Pampanga', barangay:'McArthur Highway corridor areas', street:'San Fernando, Angeles, Mabalacat', date:'Recent', time:'Afternoon–Evening', reason:'NGCP MLD — PELCO III rotational brownouts', type:'emergency' },
-];
+/* Static fallback interruptions (shown only if live data fails to load) */
+var STATIC_INTERRUPTIONS = [];
 
 function initPower() {
   var interruptions = (window._liveInterruptions && window._liveInterruptions.length)
