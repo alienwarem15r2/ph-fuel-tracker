@@ -357,7 +357,8 @@ async function handlePower(res) {
       try {
         const raw = await geminiGenerate(geminiKey, buildNGCPPrompt(today));
         const json = extractJSON(raw);
-        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Gemini fallback OK"); }
+        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Gemini fallback OK, pso:", !!json.grid_status.pso); }
+        else { console.warn("[power] NGCP Gemini bad response:", JSON.stringify(json).slice(0, 200)); }
       } catch (e) { console.warn("[power] NGCP Gemini fallback failed:", e.message); }
     }
   }
@@ -1084,9 +1085,15 @@ function parseMeralcoMaintenanceInterruptions(html) {
 }
 
 function buildNGCPPrompt(today) {
-  return `Today is ${today} Philippines. Search ngcp.ph, NGCP's Facebook page, or Philippine news for the CURRENT Luzon grid alert status: Normal, Yellow Alert (reserve deficiency, no brownout), or Red Alert (rotating brownouts active). If alert, include time windows. Return ONLY compact JSON:
-{"grid_status":{"level":"normal","title":"Luzon Grid — Normal","subtitle":"No active grid alert as of ${today}","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","alert_times":[]}}
-Color rules — yellow: color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" · red: color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" · normal: color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)".`;
+  return `Today is ${today} Philippines. Go to https://www.ngcp.ph/ and read the Power Situation Outlook table (id="table-dailyoutlook"). Extract the exact MW values for Luzon, Visayas, and Mindanao: Available Generating Capacity, System Peak Demand, and Operating Margin. Also get the "as of" timestamp shown in the table.
+
+Derive the Luzon alert level from Operating Margin: if margin < 0 = red alert (insufficient supply), if margin < 600 = yellow alert (tight reserve), else = normal.
+
+Return ONLY compact JSON, no markdown:
+{"grid_status":{"level":"normal","title":"Luzon Grid — Normal (+NNN MW)","subtitle":"Adequate operating reserve.","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","alert_times":[],"pso":{"as_of":"6:00 PM, Friday, May 15, 2026","luzon":{"capacity":12131,"demand":12802,"margin":-671},"visayas":{"capacity":2390,"demand":2502,"margin":-112},"mindanao":{"capacity":3281,"demand":2505,"margin":776}}}}
+
+Color rules — red: color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" · yellow: color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" · normal: color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)".
+Use the actual current MW numbers from the NGCP page. If operating margin is negative, the title must say "Insufficient Supply (−NNN MW)". If yellow, title is "Yellow Alert (+NNN MW)".`;
 }
 
 function buildPowerPrompt(today) {
