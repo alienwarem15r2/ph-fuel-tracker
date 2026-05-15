@@ -662,8 +662,29 @@ function applyLiveFuelData(d) {
       'Source: GasWatch PH · DOE advisories · Updated ' + d.effective_date + ' · Live via Groq AI';
   }
 
+  // 1.5 — Compute weekly adjustment from HIST when API doesn't provide signed amounts.
+  // HIST[prevIdx] = last week's prices; live prices = this week. Delta = DOE adjustment.
+  if (!d.doe_adjustment) d.doe_adjustment = {};
+  var _adj = d.doe_adjustment;
+  var _p = d.prices;
+  if (_p && _p.petron) {
+    var _prev = HIST.labels.length - 2; // second-to-last entry = last week
+    if (!_adj.gasoline_ron91_95 && _p.petron.ron91 && HIST.petron_ron91[_prev]) {
+      var _gd = _p.petron.ron91 - HIST.petron_ron91[_prev];
+      if (Math.abs(_gd) < 30) _adj.gasoline_ron91_95 = (_gd >= 0 ? '+' : '') + _gd.toFixed(2);
+    }
+    if (!_adj.diesel_std && _p.petron.diesel_std && HIST.petron_diesel[_prev]) {
+      var _dd = _p.petron.diesel_std - HIST.petron_diesel[_prev];
+      if (Math.abs(_dd) < 50) _adj.diesel_std = (_dd >= 0 ? '+' : '') + _dd.toFixed(2);
+    }
+    if (!_adj.kerosene && _p.petron.kerosene && HIST.petron_diesel[_prev]) {
+      var _kd = _p.petron.kerosene - (HIST.petron_diesel[_prev] - 0.75);
+      if (Math.abs(_kd) < 50) _adj.kerosene = (_kd >= 0 ? '+' : '') + _kd.toFixed(2);
+    }
+  }
+
   // 2. DOE announcement banner
-   if (d.doe_adjustment) {
+  if (d.doe_adjustment) {
     var adj = d.doe_adjustment;
     // GUARD: if adj is null, skip
     if (!adj) {
@@ -671,7 +692,7 @@ function applyLiveFuelData(d) {
     } else {
       document.getElementById('doe-banner-title').textContent =
         'DOE announcement — effective ' + (d.effective_date || 'this week');
-      document.getElementById('doe-banner-date').textContent = adj.note || '';
+      document.getElementById('doe-banner-date').textContent = adj.note || 'GasWatch PH + DOE';
 
       var pills = '';
       if (adj.gasoline_ron91_95) {
