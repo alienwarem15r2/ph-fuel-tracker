@@ -62,6 +62,11 @@
   .pill.up { background: var(--red-bg); color: var(--red); }
   .pill.down { background: var(--green-bg); color: var(--green); }
   .pill.neutral { background: var(--surface2); color: var(--text2); }
+  .ann-body { font-size: 12px; color: var(--text2); line-height: 1.6; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .ann-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .ann-section-label { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 7px; }
+  .ann-section-note { font-size: 12px; color: var(--text2); line-height: 1.55; margin-top: 5px; }
+  .ann-section-conf { font-size: 11px; color: var(--text3); margin-top: 3px; }
 
   .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
   @media(max-width:640px){ .summary-grid { grid-template-columns: repeat(2,1fr); } }
@@ -228,6 +233,8 @@
       <div class="ann-pills" id="doe-pills">
         <span class="pill neutral">Fetching price adjustments…</span>
       </div>
+      <div class="ann-body" id="doe-body" style="display:none;"></div>
+      <div class="ann-section" id="doe-forecast" style="display:none;"></div>
     </div>
 
     <!-- Summary cards (dynamically populated) -->
@@ -682,9 +689,16 @@ function applyLiveFuelData(d) {
   }
 
   // 2. DOE announcement banner
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // adjPill(label, signedVal, unit) — signedVal is like "+0.47" or "-9.57"
+  function adjPill(label, val, unit) {
+    if (!val) return '';
+    var v = String(val);
+    var dir = v.startsWith('+') ? 'up' : 'down';
+    return '<span class="pill ' + dir + '">' + (dir==='up'?'▲':'▼') + ' ' + esc(label) + ' ' + esc(v) + unit + '</span>';
+  }
   if (d.doe_adjustment) {
     var adj = d.doe_adjustment;
-    // GUARD: if adj is null, skip
     if (!adj) {
       document.getElementById('doe-pills').innerHTML = '<span class="pill neutral">No adjustment data</span>';
     } else {
@@ -693,35 +707,67 @@ function applyLiveFuelData(d) {
       document.getElementById('doe-banner-date').textContent = adj.note || 'GasWatch PH + DOE';
 
       var pills = '';
-      if (adj.gasoline_ron91_95) {
-        var gDir = String(adj.gasoline_ron91_95).startsWith('+') ? 'up' : 'down';
-        var gSym = gDir === 'up' ? '▲' : '▼';
-        pills += '<span class="pill ' + gDir + '">' + gSym + ' Gasoline ' + adj.gasoline_ron91_95 + '/L</span>';
-      }
-      if (adj.diesel_std) {
-        var dDir = String(adj.diesel_std).startsWith('+') ? 'up' : 'down';
-        var dSym = dDir === 'up' ? '▲' : '▼';
-        pills += '<span class="pill ' + dDir + '">' + dSym + ' Diesel ' + adj.diesel_std + '/L</span>';
-      }
-      if (adj.kerosene) {
-        var kDir = String(adj.kerosene).startsWith('+') ? 'up' : 'down';
-        var kSym = kDir === 'up' ? '▲' : '▼';
-        pills += '<span class="pill ' + kDir + '">' + kSym + ' Kerosene ' + adj.kerosene + '/L</span>';
-      }
-      if (adj.lpg_per_kg) {
-        var lDir = String(adj.lpg_per_kg).startsWith('+') ? 'up' : 'down';
-        var lSym = lDir === 'up' ? '▲' : '▼';
-        pills += '<span class="pill ' + lDir + '">' + lSym + ' LPG ' + adj.lpg_per_kg + '/kg</span>';
-      }
+      if (adj.gasoline_ron91_95) pills += adjPill('Gasoline', adj.gasoline_ron91_95, '/L');
+      if (adj.diesel_std)        pills += adjPill('Diesel',   adj.diesel_std,        '/L');
+      if (adj.kerosene)          pills += adjPill('Kerosene', adj.kerosene,          '/L');
+      if (adj.lpg_per_kg)        pills += adjPill('LPG',      adj.lpg_per_kg,        '/kg');
       if (!pills) {
         var src = d._meta && d._meta.source;
         pills = src === 'gaswatch'
-          ? '<span class="pill neutral">' + (adj.note || 'Prices live from GasWatch PH · DOE data') + '</span>'
+          ? '<span class="pill neutral">' + esc(adj.note || 'Prices live from GasWatch PH · DOE data') + '</span>'
           : '<span class="pill neutral">No adjustment data available</span>';
       }
       document.getElementById('doe-pills').innerHTML = pills;
     }
   }
+
+  // 2b. Advisory body text (current week context)
+  var bodyEl = document.getElementById('doe-body');
+  var advisories = d.advisories || [];
+  if (advisories.length > 0 && advisories[0].body) {
+    bodyEl.textContent = advisories[0].body;
+    bodyEl.style.display = 'block';
+  } else {
+    bodyEl.style.display = 'none';
+  }
+
+  // 2c. Upcoming advisory or next-week AI forecast
+  var fcEl = document.getElementById('doe-forecast');
+  var fcHtml = '';
+  var today8 = (d.effective_date || '').replace(/[^0-9\-]/g, '');
+  // Prefer a future-dated GasWatch advisory over AI forecast
+  var futureAdv = advisories.find(function(a) { return a.date > today8 && a.date.length >= 8; });
+  if (futureAdv) {
+    fcHtml += '<div class="ann-section-label">Upcoming advisory</div>';
+    var fPills = '';
+    var fAdj = futureAdv.title || '';
+    var fGM = fAdj.match(/gasoline\s*([+\-−][₱]?[0-9.]+)/i);
+    var fDM = fAdj.match(/diesel\s*([+\-−][₱]?[0-9.]+)/i);
+    var fKM = fAdj.match(/kerosene\s*([+\-−][₱]?[0-9.]+)/i);
+    function parsePH(s) { return s ? s.replace(/[−]/g,'-').replace(/[₱₱]/g,'').trim() : null; }
+    if (fGM) fPills += adjPill('Gasoline', parsePH(fGM[1]), '/L');
+    if (fDM) fPills += adjPill('Diesel',   parsePH(fDM[1]), '/L');
+    if (fKM) fPills += adjPill('Kerosene', parsePH(fKM[1]), '/L');
+    if (fPills) fcHtml += '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:6px;">' + fPills + '</div>';
+    fcHtml += '<div class="ann-section-note">' + esc(futureAdv.title) + '</div>';
+    if (futureAdv.body) fcHtml += '<div class="ann-section-note" style="margin-top:4px;">' + esc(futureAdv.body) + '</div>';
+  } else if (d.next_week_forecast) {
+    var fc = d.next_week_forecast;
+    var hasFc = fc.gasoline || fc.diesel || fc.kerosene || fc.note;
+    if (hasFc) {
+      fcHtml += '<div class="ann-section-label">Next week forecast</div>';
+      var fcPills = '';
+      if (fc.gasoline) fcPills += adjPill('Gasoline', fc.gasoline, '/L');
+      if (fc.diesel)   fcPills += adjPill('Diesel',   fc.diesel,   '/L');
+      if (fc.kerosene) fcPills += adjPill('Kerosene', fc.kerosene, '/L');
+      if (fc.lpg)      fcPills += adjPill('LPG',      fc.lpg,      '/kg');
+      if (fcPills) fcHtml += '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:6px;">' + fcPills + '</div>';
+      if (fc.note) fcHtml += '<div class="ann-section-note">' + esc(fc.note) + '</div>';
+      if (fc.confidence && fc.confidence !== 'unknown') fcHtml += '<div class="ann-section-conf">Confidence: ' + esc(fc.confidence) + '</div>';
+    }
+  }
+  if (fcHtml) { fcEl.innerHTML = fcHtml; fcEl.style.display = 'block'; }
+  else { fcEl.style.display = 'none'; }
 
   // 3. Summary cards
   var p = d.prices;
