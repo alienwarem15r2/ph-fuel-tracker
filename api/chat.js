@@ -151,10 +151,11 @@ async function handleFuel(res, region) {
   const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey   = process.env.GROQ_API_KEY;
 
-  // 1. GasWatch + DOE adjustment fetch in parallel (GasWatch gives prices, AI gives adjustment)
-  const [gwData, adjData] = await Promise.all([
+  // 1. GasWatch + DOE adjustment + next-week forecast in parallel
+  const [gwData, adjData, forecastData] = await Promise.all([
     scrapeGasWatch(region).catch(e => { console.warn("[fuel] GasWatch failed:", e.message); return null; }),
-    fetchDOEAdjustment(today, geminiKey, groqKey)
+    fetchDOEAdjustment(today, geminiKey, groqKey),
+    fetchNextWeekForecast(today, geminiKey)
   ]);
 
   if (gwData && gwData.prices && gwData.prices.petron && gwData.prices.petron.ron91 > 50) {
@@ -173,8 +174,10 @@ async function handleFuel(res, region) {
       week_label: `Week of ${today}`,
       doe_adjustment: baseAdj,
       prices: gwData.prices,
+      advisories: gwData.advisories || [],
+      next_week_forecast: forecastData,
       trend_context: "Live GasWatch PH data",
-      next_week_signal: null,
+      next_week_signal: forecastData?.signal || null,
       fill_up_advice: null,
       sources: [GASWATCH_URLS[region] || GASWATCH_URLS.metro_manila]
     };
@@ -530,7 +533,42 @@ async function scrapeGasWatch(_region) {
     };
 
     const foundCount = (petronUnleaded > 0 ? 1 : 0) + (shellUnleaded > 0 ? 1 : 0) + (unioilUnleaded > 0 ? 1 : 0);
-    return { prices, adjustment, foundCount };
+
+    /* ── 6. Parse ADVISORIES (current + upcoming) ── */
+    const advisories = [];
+    try {
+      const advDeclMatch = js.match(/ADVISORIES\s*=\s*\[/);
+      if (advDeclMatch) {
+        const advArrStart = js.indexOf('[', advDeclMatch.index);
+        const advArrBlock = extractBlock(js, advArrStart);
+        if (advArrBlock) {
+          let pos = 1;
+          while (pos < advArrBlock.length && advisories.length < 6) {
+            const ob = advArrBlock.indexOf('{', pos);
+            if (ob === -1) break;
+            const objBlock = extractBlock(advArrBlock, ob);
+            if (!objBlock) break;
+            const dateM  = objBlock.match(/date\s*:\s*["'`]([^"'`\n]+)["'`]/);
+            const titleM = objBlock.match(/title\s*:\s*["'`]([^"'`\n]+)["'`]/);
+            const bodyM  = objBlock.match(/body\s*:\s*["'`]([^"'`]+)["'`]/);
+            const typeM  = objBlock.match(/type\s*:\s*["'`]([^"'`\n]+)["'`]/);
+            if (dateM && titleM) {
+              advisories.push({
+                date:  dateM[1],
+                title: titleM[1],
+                body:  bodyM ? bodyM[1].replace(/\s+/g, ' ').trim() : null,
+                type:  typeM ? typeM[1] : 'info'
+              });
+            }
+            pos = ob + objBlock.length;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[scrapeGasWatch] ADVISORIES parse failed:", e.message);
+    }
+
+    return { prices, adjustment, foundCount, advisories };
 
   } catch (e) {
     clearTimeout(timeout);
@@ -639,6 +677,28 @@ Rules: values are signed strings ("-13.30" = rollback ₱13.30/L, "+0.20" = incr
 function buildFuelPrompt(today) {
   return `Today is ${today}. Search gaswatchph.com and doe.gov.ph for: (1) current PH pump prices for Petron, Shell, and Unioil, and (2) this week's DOE-announced price adjustment (rollback or increase per liter). Current realistic ranges: RON91 ₱75-90, RON95 ₱78-93, diesel ₱70-90. The doe_adjustment fields must be signed strings like "+0.20" or "-9.57" — use null only if truly unavailable. Return ONLY compact JSON, no markdown, no explanation.
 {"effective_date":"${today}","week_label":"Week of ${today}","doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null},"prices":{"petron":{"ron91":null,"ron95":null,"ron100":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"shell":{"ron91":null,"ron95":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"unioil":{"ron91":null,"ron95":null,"diesel_std":null}},"trend_context":null,"next_week_signal":null,"fill_up_advice":null,"sources":[]}`;
+}
+
+function buildForecastPrompt(today) {
+  return `Today is ${today} Philippines. Search Philippine news (Rappler, GMA News, BusinessMirror, Inquirer, ABS-CBN, or doe.gov.ph) for the NEXT weekly DOE fuel price adjustment — the one taking effect NEXT Tuesday, not this week's. DOE typically pre-announces it on Thursday or Friday. Return ONLY compact JSON:
+{"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"unknown","confidence":"unknown","note":null}}
+Rules: gasoline/diesel/kerosene/lpg = signed strings like "-2.00" or "+1.50" per liter; signal = "increase", "rollback", "mixed", or "stable"; confidence = "confirmed" (DOE official), "expected" (analyst forecast), or "unknown"; note = 1-2 sentence summary of what to expect. Return null values if no next-week forecast is available yet.`;
+}
+
+async function fetchNextWeekForecast(today, geminiKey) {
+  if (!geminiKey) return null;
+  try {
+    const raw = await geminiGenerate(geminiKey, buildForecastPrompt(today));
+    const json = extractJSON(raw);
+    if (!json.error && json.next_week_forecast) {
+      const f = json.next_week_forecast;
+      if (f.gasoline || f.diesel || f.kerosene || f.note) return f;
+    }
+    return null;
+  } catch (e) {
+    console.warn("[forecast] Gemini failed:", e.message);
+    return null;
+  }
 }
 
 function buildPowerPrompt(today) {
