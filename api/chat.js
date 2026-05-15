@@ -284,169 +284,212 @@ async function handlePower(res) {
   return res.status(200).json(result);
 }
 
-/* ── GASWATCH PH SCRAPER ── */
-async function scrapeGasWatch(region) {
-  const url = GASWATCH_URLS[region] || GASWATCH_URLS.metro_manila;
+/* ── GASWATCH PH DATA.JS SCRAPER ── */
+
+// Extract a JS object/array block starting at `startIdx` in `src` using brace counting.
+function extractBlock(src, startIdx) {
+  const open  = src[startIdx];
+  const close = open === '{' ? '}' : ']';
+  let depth = 0, i = startIdx;
+  while (i < src.length) {
+    if (src[i] === open)  depth++;
+    if (src[i] === close) { depth--; if (depth === 0) return src.slice(startIdx, i + 1); }
+    i++;
+  }
+  return null;
+}
+
+// Parse a number from a key:value pattern, e.g.  diesel: 79.90
+function grabNum(src, key) {
+  const m = src.match(new RegExp(key + '\\s*:\\s*([0-9]+\\.?[0-9]*)'));
+  return m ? parseFloat(m[1]) : 0;
+}
+
+async function scrapeGasWatch(_region) {
+  const DATA_JS_URL = "https://gaswatchph.com/js/data.js";
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(DATA_JS_URL, {
       signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-      },
-      redirect: "follow"
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PricePH/1.0)" }
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const html = await res.text();
+    if (!res.ok) throw new Error("data.js HTTP " + res.status);
+    const js = await res.text();
 
+    /* ── 1. Current week prices from PRICE_HISTORY[0].brands ── */
+    const phIdx = js.indexOf('PRICE_HISTORY');
+    if (phIdx === -1) throw new Error("PRICE_HISTORY not found in data.js");
+    const arrStart = js.indexOf('[', phIdx);
+    // First object in the array = current week
+    const objStart = js.indexOf('{', arrStart);
+    const weekBlock = extractBlock(js, objStart);
+    if (!weekBlock) throw new Error("Could not extract current week block");
+
+    // Find brands: { … } inside that week block
+    const brandsIdx = weekBlock.indexOf('brands');
+    const brandsStart = weekBlock.indexOf('{', brandsIdx);
+    const brandsBlock = extractBlock(weekBlock, brandsStart);
+    if (!brandsBlock) throw new Error("brands block not found");
+
+    // Per-brand blocks
+    function getBrandBlock(name) {
+      const idx = brandsBlock.toLowerCase().indexOf(name.toLowerCase() + ':');
+      if (idx === -1) return null;
+      const bs = brandsBlock.indexOf('{', idx);
+      return bs === -1 ? null : extractBlock(brandsBlock, bs);
+    }
+
+    const petronB = getBrandBlock('petron');
+    const shellB  = getBrandBlock('shell');
+    const unioilB = getBrandBlock('unioil');
+
+    const petronDiesel   = petronB ? grabNum(petronB, 'diesel')   : 0;
+    const petronUnleaded = petronB ? grabNum(petronB, 'unleaded') : 0;
+    const shellDiesel    = shellB  ? grabNum(shellB,  'diesel')   : 0;
+    const shellUnleaded  = shellB  ? grabNum(shellB,  'unleaded') : 0;
+    const unioilDiesel   = unioilB ? grabNum(unioilB, 'diesel')   : 0;
+    const unioilUnleaded = unioilB ? grabNum(unioilB, 'unleaded') : 0;
+
+    if (petronUnleaded < 50 || petronUnleaded > 200) {
+      throw new Error("Unrealistic petron unleaded from data.js: " + petronUnleaded);
+    }
+
+    /* ── 2. Previous prices from PREVIOUS_PRICES ── */
+    const ppIdx = js.indexOf('PREVIOUS_PRICES');
+    let prevPetronKero = 0, prevShellKero = 0, prevUnioilKero = 0;
+    let prevPetronDiesel = 0, prevShellDiesel = 0;
+    if (ppIdx !== -1) {
+      const ppStart = js.indexOf('{', ppIdx);
+      const ppBlock = extractBlock(js, ppStart);
+      if (ppBlock) {
+        const ppPetron = getBrandBlockIn(ppBlock, 'petron');
+        const ppShell  = getBrandBlockIn(ppBlock, 'shell');
+        const ppUnioil = getBrandBlockIn(ppBlock, 'unioil');
+        if (ppPetron) {
+          prevPetronKero  = grabNum(ppPetron, 'kerosene');
+          prevPetronDiesel = grabNum(ppPetron, 'diesel');
+        }
+        if (ppShell)  {
+          prevShellKero   = grabNum(ppShell,  'kerosene');
+          prevShellDiesel = grabNum(ppShell,  'diesel');
+        }
+        if (ppUnioil) prevUnioilKero = grabNum(ppUnioil, 'kerosene');
+      }
+    }
+
+    function getBrandBlockIn(src, name) {
+      const idx = src.toLowerCase().indexOf(name.toLowerCase() + ':');
+      if (idx === -1) return null;
+      const bs = src.indexOf('{', idx);
+      return bs === -1 ? null : extractBlock(src, bs);
+    }
+
+    /* ── 3. Adjustments from advisory title ──
+       Format: "diesel −₱9.57, gasoline +₱0.47, kerosene −₱13.30"
+       Unicode minus U+2212 (−) and regular hyphen both used. */
+    function parseAdvisoryAdj(label) {
+      // Match optional sign/minus then digits
+      const m = label.match(/([+\-−])\s*[₱₱]?\s*([0-9]+\.[0-9]+)/);
+      if (!m) return null;
+      const sign = (m[1] === '+') ? '+' : '-';
+      return sign + parseFloat(m[2]).toFixed(2);
+    }
+
+    let adjGasoline = null, adjDiesel = null, adjKerosene = null, adjLpg = null;
+
+    // Look for advisory/announcement title text
+    const advPatterns = [
+      /advisory[_\s]?title\s*:\s*["'`]([^"'`]+)["'`]/i,
+      /title\s*:\s*["'`]([^"'`]*(?:diesel|gasoline|kerosene)[^"'`]*)["'`]/i,
+      /["'`]([^"'`]*diesel[^"'`]*gasoline[^"'`]*)["'`]/i,
+    ];
+    for (const pat of advPatterns) {
+      const am = js.match(pat);
+      if (!am) continue;
+      const title = am[1];
+      // Extract each fuel type from the title
+      const gasolineM = title.match(/gasoline\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+      const dieselM   = title.match(/diesel\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+      const keroseneM = title.match(/kerosene\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+      const lpgM      = title.match(/lpg\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+      if (gasolineM) adjGasoline = parseAdvisoryAdj(gasolineM[1]);
+      if (dieselM)   adjDiesel   = parseAdvisoryAdj(dieselM[1]);
+      if (keroseneM) adjKerosene = parseAdvisoryAdj(keroseneM[1]);
+      if (lpgM)      adjLpg      = parseAdvisoryAdj(lpgM[1]);
+      if (adjDiesel || adjGasoline) break;
+    }
+
+    // Fallback: scan all quoted strings for adjustment patterns
+    if (!adjDiesel && !adjGasoline) {
+      const allStrings = js.matchAll(/["'`]([^"'`]{20,200})["'`]/g);
+      for (const sm of allStrings) {
+        const s = sm[1];
+        if (!/diesel/i.test(s) || !/gasoline/i.test(s)) continue;
+        const gasolineM = s.match(/gasoline\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+        const dieselM   = s.match(/diesel\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+        const keroseneM = s.match(/kerosene\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+        const lpgM      = s.match(/lpg\s*([+\-−][₱₱]?[0-9]+\.[0-9]+)/i);
+        if (gasolineM) adjGasoline = parseAdvisoryAdj(gasolineM[1]);
+        if (dieselM)   adjDiesel   = parseAdvisoryAdj(dieselM[1]);
+        if (keroseneM) adjKerosene = parseAdvisoryAdj(keroseneM[1]);
+        if (lpgM)      adjLpg      = parseAdvisoryAdj(lpgM[1]);
+        if (adjDiesel || adjGasoline) break;
+      }
+    }
+
+    /* ── 4. Compute kerosene current price = prev + adjustment ── */
+    const keroAdj = adjKerosene ? parseFloat(adjKerosene) : 0;
+
+    const petronKerosene = prevPetronKero > 50
+      ? Math.round((prevPetronKero + keroAdj) * 100) / 100
+      : 0;
+    const shellKerosene  = prevShellKero  > 50
+      ? Math.round((prevShellKero  + keroAdj) * 100) / 100
+      : 0;
+    const unioilKerosene = prevUnioilKero > 50
+      ? Math.round((prevUnioilKero + keroAdj) * 100) / 100
+      : 0;
+
+    /* ── 5. Build price object ── */
     const prices = {
-      petron: { ron91: 0, ron95: 0, ron100: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
-      shell:  { ron91: 0, ron95: 0, ron97: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
-      unioil: { ron91: 0, ron95: 0, diesel_std: 0 }
+      petron: {
+        ron91:       petronUnleaded,
+        ron95:       petronUnleaded > 0 ? Math.round((petronUnleaded + 3.10) * 100) / 100 : 0,
+        ron100:      petronUnleaded > 0 ? Math.round((petronUnleaded + 13.15) * 100) / 100 : 0,
+        diesel_std:  petronDiesel,
+        diesel_prem: petronDiesel  > 0 ? Math.round((petronDiesel  + 4.25) * 100) / 100 : 0,
+        kerosene:    petronKerosene
+      },
+      shell: {
+        ron91:       shellUnleaded,
+        ron95:       shellUnleaded > 0 ? Math.round((shellUnleaded + 3.10) * 100) / 100 : 0,
+        ron97:       shellUnleaded > 0 ? Math.round((shellUnleaded + 6.64) * 100) / 100 : 0,
+        diesel_std:  shellDiesel,
+        diesel_prem: shellDiesel   > 0 ? Math.round((shellDiesel   + 4.70) * 100) / 100 : 0,
+        kerosene:    shellKerosene
+      },
+      unioil: {
+        ron91:      unioilUnleaded,
+        ron95:      unioilUnleaded > 0 ? Math.round((unioilUnleaded + 3.00) * 100) / 100 : 0,
+        diesel_std: unioilDiesel,
+        kerosene:   unioilKerosene
+      }
     };
 
-    // Pattern: <tr><td>Brand</td><td>Diesel</td><td>Unleaded</td></tr>
-    const tableRegex = /<tr[^>]*>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/gi;
-
-    let match;
-    let foundCount = 0;
-
-    while ((match = tableRegex.exec(html)) !== null) {
-      const rawBrand = match[1].replace(/<[^>]+>/g, '').trim().toLowerCase();
-      const col2 = match[2].replace(/<[^>]+>/g, '').replace(/[₱,]/g, '').trim();
-      const col3 = match[3].replace(/<[^>]+>/g, '').replace(/[₱,]/g, '').trim();
-
-      const val2 = parseFloat(col2) || 0;
-      const val3 = parseFloat(col3) || 0;
-      
-      let diesel, unleaded;
-      if (val2 > 0 && val3 > 0) {
-        diesel = val2 < val3 ? val2 : val3;
-        unleaded = val2 < val3 ? val3 : val2;
-      } else {
-        continue;
-      }
-
-      if (rawBrand.includes('petron') && diesel > 50) {
-        prices.petron.diesel_std = diesel;
-        prices.petron.ron91 = unleaded;
-        prices.petron.ron95 = unleaded + 3.10;
-        prices.petron.ron100 = unleaded + 13.15;
-        prices.petron.diesel_prem = diesel + 4.25;
-        foundCount++;
-      }
-      else if (rawBrand.includes('shell') && diesel > 50) {
-        prices.shell.diesel_std = diesel;
-        prices.shell.ron91 = unleaded;
-        prices.shell.ron95 = unleaded + 3.10;
-        prices.shell.ron97 = unleaded + 6.64;
-        prices.shell.diesel_prem = diesel + 4.70;
-        foundCount++;
-      }
-      // Kerosene: try to read directly from its own table row
-      else if (rawBrand.includes('kerosene') && val2 > 50) {
-        const kp = Math.min(val2, val3 || val2);
-        prices.petron.kerosene = kp;
-        prices.shell.kerosene  = kp + 1.04;
-        foundCount++;
-      }
-      else if (rawBrand.includes('unioil') && diesel > 50) {
-        prices.unioil.diesel_std = diesel;
-        prices.unioil.ron91 = unleaded;
-        prices.unioil.ron95 = unleaded + 3.00;
-        foundCount++;
-      }
-    }
-
-    // Fallback: direct text extraction
-    if (foundCount < 2) {
-      const petronBlock = html.match(/Petron[\s\S]{0,300}?(\d{2,3}\.\d{2})[\s\S]{0,50}?(\d{2,3}\.\d{2})/i);
-      const shellBlock = html.match(/Shell[\s\S]{0,300}?(\d{2,3}\.\d{2})[\s\S]{0,50}?(\d{2,3}\.\d{2})/i);
-      const unioilBlock = html.match(/Unioil[\s\S]{0,300}?(\d{2,3}\.\d{2})[\s\S]{0,50}?(\d{2,3}\.\d{2})/i);
-
-      if (petronBlock) {
-        const vals = [parseFloat(petronBlock[1]), parseFloat(petronBlock[2])].sort((a,b) => a-b);
-        prices.petron.diesel_std = vals[0];
-        prices.petron.ron91 = vals[1];
-        prices.petron.ron95 = vals[1] + 3.10;
-        prices.petron.ron100 = vals[1] + 13.15;
-        prices.petron.diesel_prem = vals[0] + 4.25;
-      }
-      if (shellBlock) {
-        const vals = [parseFloat(shellBlock[1]), parseFloat(shellBlock[2])].sort((a,b) => a-b);
-        prices.shell.diesel_std = vals[0];
-        prices.shell.ron91 = vals[1];
-        prices.shell.ron95 = vals[1] + 3.10;
-        prices.shell.ron97 = vals[1] + 6.64;
-        prices.shell.diesel_prem = vals[0] + 4.70;
-      }
-      // Try to scrape actual kerosene price from HTML
-      const keroBlock = html.match(/kerosene[\s\S]{0,200}?(\d{2,3}\.\d{2})/i);
-      if (keroBlock) {
-        const kp = parseFloat(keroBlock[1]);
-        if (kp > 50 && kp < 150) {
-          prices.petron.kerosene = kp;
-          prices.shell.kerosene  = kp + 1.04;
-        }
-      }
-      if (unioilBlock) {
-        const vals = [parseFloat(unioilBlock[1]), parseFloat(unioilBlock[2])].sort((a,b) => a-b);
-        prices.unioil.diesel_std = vals[0];
-        prices.unioil.ron91 = vals[1];
-        prices.unioil.ron95 = vals[1] + 3.00;
-      }
-    }
-
-    // GasWatch shows weekly adjustments as:
-    //   <span class="change-tag change-down">Kerosene −&#8369;13.30/L</span>
-    //   <span class="change-tag change-up">Gasoline +&#8369;0.20/L</span>
-    // Ranges like "Diesel −&#8369;5.00–10.48/L" are skipped (let HIST compute those).
-    function extractAdj(keyword) {
-      const m = html.match(
-        new RegExp('<span([^>]*)class="[^"]*change-tag[^"]*"[^>]*>([^<]*' + keyword + '[^<]*)<\\/span>', 'i')
-      );
-      if (!m) return null;
-      const attrs   = m[1];
-      const content = m[2];
-      // Skip ranges (contain en-dash or two separate numbers like 5.00–10.48)
-      if (/[0-9][–—\-][0-9]/.test(content)) return null;
-      // Extract the numeric value
-      const numM = content.match(/([0-9]+\.[0-9]+)/);
-      if (!numM) return null;
-      const val = parseFloat(numM[1]);
-      if (val < 0.01 || val > 50) return null;
-      // Direction from class name or sign character in content
-      if (attrs.includes('change-down') || /[\-−]/.test(content)) return '-' + val.toFixed(2);
-      if (attrs.includes('change-up')   || content.includes('+'))        return '+' + val.toFixed(2);
-      return null;
-    }
-
     const adjustment = {
-      gasoline_ron91_95: extractAdj('Gasoline') || extractAdj('Unleaded'),
-      diesel_std:        extractAdj('Diesel'),
-      kerosene:          extractAdj('Kerosene'),
-      lpg_per_kg:        extractAdj('LPG') || extractAdj('Lpg'),
+      gasoline_ron91_95: adjGasoline,
+      diesel_std:        adjDiesel,
+      kerosene:          adjKerosene,
+      lpg_per_kg:        adjLpg,
       note: "GasWatch PH community + DOE data"
     };
 
-    if (prices.petron.ron91 < 50 || prices.petron.ron91 > 150) {
-      throw new Error("GasWatch scraper returned unrealistic prices");
-    }
-
-    // Kerosene fallback: GasWatch doesn't publish it, so estimate from diesel.
-    // The DOE adjustment scraper provides the correct weekly change separately.
-    if (!prices.petron.kerosene && prices.petron.diesel_std > 50) {
-      prices.petron.kerosene = Math.round((prices.petron.diesel_std - 0.75) * 100) / 100;
-    }
-    if (!prices.shell.kerosene && prices.shell.diesel_std > 50) {
-      prices.shell.kerosene = Math.round((prices.shell.diesel_std - 1.79) * 100) / 100;
-    }
-
+    const foundCount = (petronUnleaded > 0 ? 1 : 0) + (shellUnleaded > 0 ? 1 : 0) + (unioilUnleaded > 0 ? 1 : 0);
     return { prices, adjustment, foundCount };
+
   } catch (e) {
     clearTimeout(timeout);
     throw e;
