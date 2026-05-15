@@ -416,7 +416,7 @@ async function scrapeGasWatch(region) {
 
 /* ── PROMPT BUILDERS ── */
 function buildFuelPrompt(today) {
-  return `Today is ${today}. Search gaswatchph.com for current PH pump prices (Petron/Shell/Unioil) and latest DOE weekly adjustment. Return ONLY compact JSON, no markdown, no explanation. RON91 realistic ₱80-95, diesel ₱75-90. Use null if unavailable.
+  return `Today is ${today}. Search gaswatchph.com and doe.gov.ph for: (1) current PH pump prices for Petron, Shell, and Unioil, and (2) this week's DOE-announced price adjustment (rollback or increase per liter). Current realistic ranges: RON91 ₱75-90, RON95 ₱78-93, diesel ₱70-90. The doe_adjustment fields must be signed strings like "+0.20" or "-9.57" — use null only if truly unavailable. Return ONLY compact JSON, no markdown, no explanation.
 {"effective_date":"${today}","week_label":"Week of ${today}","doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null},"prices":{"petron":{"ron91":null,"ron95":null,"ron100":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"shell":{"ron91":null,"ron95":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"unioil":{"ron91":null,"ron95":null,"diesel_std":null}},"trend_context":null,"next_week_signal":null,"fill_up_advice":null,"sources":[]}`;
 }
 
