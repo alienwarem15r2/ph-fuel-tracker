@@ -367,9 +367,10 @@ async function scrapeGasWatch(_region) {
     const js = await res.text();
 
     /* ── 1. Current week prices from PRICE_HISTORY[0].brands ── */
-    const phIdx = js.indexOf('PRICE_HISTORY');
-    if (phIdx === -1) throw new Error("PRICE_HISTORY not found in data.js");
-    const arrStart = js.indexOf('[', phIdx);
+    // Search for the actual declaration "PRICE_HISTORY = [" to skip any earlier references
+    const phDeclMatch = js.match(/PRICE_HISTORY\s*=\s*\[/);
+    if (!phDeclMatch) throw new Error("PRICE_HISTORY declaration not found in data.js");
+    const arrStart = js.indexOf('[', phDeclMatch.index);
     // First object in the array = current week
     const objStart = js.indexOf('{', arrStart);
     const weekBlock = extractBlock(js, objStart);
@@ -405,11 +406,11 @@ async function scrapeGasWatch(_region) {
     }
 
     /* ── 2. Previous prices from PREVIOUS_PRICES ── */
-    const ppIdx = js.indexOf('PREVIOUS_PRICES');
+    const ppDeclMatch = js.match(/PREVIOUS_PRICES\s*=\s*\{/);
     let prevPetronKero = 0, prevShellKero = 0, prevUnioilKero = 0;
     let prevPetronDiesel = 0, prevShellDiesel = 0;
-    if (ppIdx !== -1) {
-      const ppStart = js.indexOf('{', ppIdx);
+    if (ppDeclMatch) {
+      const ppStart = js.indexOf('{', ppDeclMatch.index);
       const ppBlock = extractBlock(js, ppStart);
       if (ppBlock) {
         const ppPetron = getBrandBlockIn(ppBlock, 'petron');
