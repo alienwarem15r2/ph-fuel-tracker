@@ -133,6 +133,17 @@ async function handleFuel(res, region) {
       };
       source = "gaswatch";
       console.log("[fuel] GasWatch OK, ron91:", gwData.prices.petron.ron91);
+
+      // GasWatch gives prices but no DOE adjustment amounts — augment with AI search.
+      const adjData = await fetchDOEAdjustment(today, geminiKey, process.env.GROQ_API_KEY);
+      if (adjData) {
+        if (adjData.gasoline_ron91_95) result.doe_adjustment.gasoline_ron91_95 = adjData.gasoline_ron91_95;
+        if (adjData.diesel_std)        result.doe_adjustment.diesel_std        = adjData.diesel_std;
+        if (adjData.kerosene)          result.doe_adjustment.kerosene          = adjData.kerosene;
+        if (adjData.lpg_per_kg)        result.doe_adjustment.lpg_per_kg        = adjData.lpg_per_kg;
+        if (adjData.note)              result.doe_adjustment.note              = adjData.note;
+        console.log("[fuel] DOE adjustment augmented:", adjData);
+      }
     }
   } catch (e) {
     console.warn("[fuel] GasWatch scraper failed:", e.message);
@@ -414,7 +425,32 @@ async function scrapeGasWatch(region) {
   }
 }
 
+/* ── DOE ADJUSTMENT AUGMENT ── */
+async function fetchDOEAdjustment(today, geminiKey, groqKey) {
+  const prompt = buildAdjustmentPrompt(today);
+  if (geminiKey) {
+    try {
+      const raw = await geminiGenerate(geminiKey, prompt);
+      const json = extractJSON(raw);
+      if (!json.error && json.doe_adjustment) return json.doe_adjustment;
+    } catch (e) { console.warn("[adj] Gemini failed:", e.message); }
+  }
+  if (groqKey) {
+    try {
+      const raw = await groqSearch(prompt);
+      const json = extractJSON(raw);
+      if (!json.error && json.doe_adjustment) return json.doe_adjustment;
+    } catch (e) { console.warn("[adj] Groq failed:", e.message); }
+  }
+  return null;
+}
+
 /* ── PROMPT BUILDERS ── */
+function buildAdjustmentPrompt(today) {
+  return `Today is ${today}. Search for the latest DOE (Department of Energy Philippines) weekly fuel price adjustment that took effect this week. Look at doe.gov.ph, rappler.com, gmanetwork.com, or businessmirror.com.ph. Return ONLY compact JSON with signed strings like "+0.20" or "-9.57" — no markdown, no explanation. Use null if truly unavailable.
+{"doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null}}`;
+}
+
 function buildFuelPrompt(today) {
   return `Today is ${today}. Search gaswatchph.com and doe.gov.ph for: (1) current PH pump prices for Petron, Shell, and Unioil, and (2) this week's DOE-announced price adjustment (rollback or increase per liter). Current realistic ranges: RON91 ₱75-90, RON95 ₱78-93, diesel ₱70-90. The doe_adjustment fields must be signed strings like "+0.20" or "-9.57" — use null only if truly unavailable. Return ONLY compact JSON, no markdown, no explanation.
 {"effective_date":"${today}","week_label":"Week of ${today}","doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null},"prices":{"petron":{"ron91":null,"ron95":null,"ron100":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"shell":{"ron91":null,"ron95":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"unioil":{"ron91":null,"ron95":null,"diesel_std":null}},"trend_context":null,"next_week_signal":null,"fill_up_advice":null,"sources":[]}`;
