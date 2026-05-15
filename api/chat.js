@@ -701,8 +701,19 @@ async function fetchNextWeekForecast(today, geminiKey) {
 }
 
 function buildPowerPrompt(today) {
-  return `Today is ${today}. Search NGCP and Meralco for Luzon grid status and outages in NCR/Pampanga. Return ONLY compact JSON, no markdown.
-{"grid_status":{"level":"normal","title":null,"subtitle":null,"color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","alert_times":[]},"interruptions":[{"city":null,"barangay":null,"street":null,"date":null,"time":null,"reason":null,"type":"scheduled"}],"last_updated":"${today}","sources":[]}`;
+  return `Today is ${today} Philippines. Search for these TWO things and return real current data:
+
+1. NGCP Luzon grid alert status — search ngcp.ph, NGCP Facebook page, or Philippine news for today's Luzon grid level: Normal, Yellow Alert (insufficient reserve, no brownout yet), or Red Alert (rotating brownouts active). If Yellow/Red Alert, include the alert time windows.
+
+2. Meralco power interruptions — search "site:company.meralco.com.ph yellow red alert" AND "site:company.meralco.com.ph maintenance schedule" OR search Meralco NCR brownout schedule for today and the next 3 days. List affected cities and barangays for both:
+   a) Emergency brownouts (yellow/red alert areas) — type "emergency"
+   b) Scheduled maintenance interruptions — type "scheduled"
+
+Return ONLY compact JSON, no markdown, no explanation:
+{"grid_status":{"level":"normal","title":"Luzon Grid — Normal","subtitle":"No active grid alert as of ${today}","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","alert_times":[]},"interruptions":[{"city":null,"barangay":null,"street":null,"date":null,"time":null,"reason":null,"type":"scheduled"}],"last_updated":"${today}","sources":[]}
+
+Color rules — yellow alert: color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" · red alert: color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" · normal: color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)".
+Use real specific dates and times (not "Recent" or "Afternoon"). If no interruptions are found, return an empty array. Include NCR cities and Pampanga if data is available.`;
 }
 
 /* ── GEMINI ── */
@@ -714,7 +725,7 @@ async function geminiGenerate(apiKey, prompt) {
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       tools: [{ google_search: {} }],
-      generationConfig: { maxOutputTokens: 2000, temperature: 0.1 }
+      generationConfig: { maxOutputTokens: 3000, temperature: 0.1 }
     })
   });
   if (!res.ok) {
