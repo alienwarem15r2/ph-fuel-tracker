@@ -756,7 +756,7 @@ function applyLiveFuelData(d) {
   }
 
   // 9. Re-run calculator and chart with live prices
-  calc();
+
 
  // 9.5 — Update chart with live prices before rendering
   if (p && p.petron && p.shell) {
@@ -773,7 +773,7 @@ function applyLiveFuelData(d) {
     HIST.shell_diesel[lastIdx] = p.shell.diesel_std || HIST.shell_diesel[lastIdx];
     HIST.unioil_diesel[lastIdx] = (p.unioil && p.unioil.diesel_std) || HIST.unioil_diesel[lastIdx];
   }
- 
+   calc();
   renderChart(curFuel);
 }
 
