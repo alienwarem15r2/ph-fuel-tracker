@@ -218,6 +218,11 @@
       Power Interruptions
       <span id="power-badge" style="background:#fdeaea;color:#b83232;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;display:none;"></span>
     </button>
+    <button class="main-tab" id="tab-water" onclick="switchTab('water')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+      Water Supply
+      <span id="water-badge" style="background:#fdeaea;color:#b83232;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;display:none;"></span>
+    </button>
   </div>
 
   <!-- ═══════════════════════════════════ FUEL TAB ═══════════════════════════════════ -->
@@ -474,6 +479,66 @@
       </p>
     </div>
   </div><!-- end panel-power -->
+  <!-- ═══════════════════════════ WATER TAB ═══════════════════════════ -->
+  <div id="panel-water" style="display:none;">
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <div style="width:3px;height:22px;background:#1a1917;border-radius:2px;"></div>
+        <h2 style="font-size:16px;font-weight:600;margin:0;letter-spacing:-0.3px;">Metro Manila water supply</h2>
+        <span style="font-size:11px;color:#9e9d97;margin-left:auto;" id="water-updated-label">MWSS · Maynilad · Manila Water</span>
+      </div>
+
+      <!-- Angat Dam Status Card -->
+      <div id="dam-status-box" style="border-radius:12px;padding:14px 16px;margin-bottom:10px;border:1px solid rgba(0,0,0,0.08);background:var(--surface);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div id="dam-icon" style="font-size:22px;flex-shrink:0;">💧</div>
+          <div style="flex:1;">
+            <div id="dam-title" style="font-size:14px;font-weight:600;">Loading Angat Dam level…</div>
+            <div id="dam-sub" style="font-size:12px;margin-top:1px;color:var(--text2);">Fetching MWSS bulletin</div>
+          </div>
+          <a href="https://www.mwss.gov.ph" target="_blank" rel="noopener" style="font-size:11px;color:#1a4fa0;text-decoration:none;flex-shrink:0;">MWSS ↗</a>
+        </div>
+        <div id="dam-gauge-wrap" style="display:none;">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:3px;">
+            <span>MDDL 180m</span>
+            <span id="dam-level-pct"></span>
+            <span>NHWL 212m</span>
+          </div>
+          <div style="background:rgba(0,0,0,0.08);border-radius:6px;height:8px;overflow:hidden;">
+            <div id="dam-gauge-fill" style="height:100%;border-radius:6px;transition:width .5s ease;width:0%;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:4px;">
+            <span id="dam-trend"></span>
+            <span id="dam-as-of"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Utility filter tabs -->
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;" id="water-utility-tabs">
+        <button class="ftab on" id="wtab-All" onclick="setWaterUtility('All')">All</button>
+        <button class="ftab" id="wtab-Maynilad" onclick="setWaterUtility('Maynilad')">Maynilad</button>
+        <button class="ftab" id="wtab-Manila Water" onclick="setWaterUtility('Manila Water')">Manila Water</button>
+      </div>
+
+      <!-- Search -->
+      <div style="position:relative;margin-bottom:10px;">
+        <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:var(--text3);fill:none;stroke-width:2;" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="water-search" placeholder="Search city or barangay…"
+          style="width:100%;padding:8px 12px 8px 30px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);outline:none;">
+      </div>
+
+      <!-- Advisory list -->
+      <div id="water-interruption-list" style="display:flex;flex-direction:column;gap:8px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">Loading water advisory data…</div>
+      </div>
+
+      <p style="font-size:10px;color:#9e9d97;margin-top:10px;text-align:right;">
+        Source: MWSS Angat Dam bulletin · Maynilad &amp; Manila Water advisories ·
+        <a href="https://www.mwss.gov.ph" target="_blank" rel="noopener" style="color:#9e9d97;">MWSS.gov.ph ↗</a>
+      </p>
+    </div>
+  </div><!-- end panel-water -->
 
   <!-- External links -->
   <div class="links-row">
@@ -600,13 +665,14 @@ async function apiCall(action) {
 async function fetchLiveData() {
   const btn = document.getElementById('refresh-btn');
   btn.classList.add('loading');
-  setStatus('loading', 'Fetching latest DOE fuel prices and Meralco/NGCP data…');
+  setStatus('loading', 'Fetching fuel prices, power interruptions, and water advisories…');
 
   try {
-    // Run fuel + power fetches in parallel
-    const [fuelResult, powerResult] = await Promise.all([
+    // Run fuel + power + water fetches in parallel
+    const [fuelResult, powerResult, waterResult] = await Promise.all([
       apiCall('fuel'),
-      apiCall('power')
+      apiCall('power'),
+      apiCall('water')
     ]);
 
     let anySuccess = false;
@@ -630,6 +696,15 @@ async function fetchLiveData() {
     } else {
       errors.push('Power: ' + powerResult.errorMsg);
       console.error('[PH Watch] Power fetch failed:', powerResult.errorMsg);
+    }
+
+    if (waterResult.ok) {
+      liveData.water = waterResult.data;
+      applyLiveWaterData(waterResult.data);
+      anySuccess = true;
+      console.log('[PH Watch] Water data loaded, dam level:', waterResult.data.dam_status?.level);
+    } else {
+      console.warn('[PH Watch] Water fetch failed:', waterResult.errorMsg);
     }
 
     liveData.fetchedAt = new Date();
@@ -1046,8 +1121,10 @@ function applyLivePowerData(d) {
 function switchTab(tab) {
   document.getElementById('panel-fuel').style.display = tab === 'fuel' ? '' : 'none';
   document.getElementById('panel-power').style.display = tab === 'power' ? '' : 'none';
+  document.getElementById('panel-water').style.display = tab === 'water' ? '' : 'none';
   document.getElementById('tab-fuel').className = 'main-tab' + (tab === 'fuel' ? ' on' : '');
   document.getElementById('tab-power').className = 'main-tab' + (tab === 'power' ? ' on' : '');
+  document.getElementById('tab-water').className = 'main-tab' + (tab === 'water' ? ' on' : '');
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1492,6 +1569,143 @@ async function sendAI() {
   document.getElementById('ai-messages').scrollTop = 999999;
 }
 
+
+/* ══════════════════════════════════════════════════════════════
+   WATER SUPPLY
+   ══════════════════════════════════════════════════════════════ */
+var activeWaterUtility = 'All';
+var waterSearchQuery = '';
+
+function setWaterUtility(utility) {
+  activeWaterUtility = utility;
+  document.querySelectorAll('#water-utility-tabs .ftab').forEach(function(b) {
+    b.classList.toggle('on', b.id === 'wtab-' + utility);
+  });
+  renderWaterInterruptions(window._liveWaterInterruptions || []);
+}
+
+function initWater() {
+  var searchEl = document.getElementById('water-search');
+  if (searchEl && !searchEl._waterWired) {
+    searchEl._waterWired = true;
+    searchEl.oninput = function() {
+      waterSearchQuery = this.value.toLowerCase().trim();
+      renderWaterInterruptions(window._liveWaterInterruptions || []);
+    };
+  }
+  renderWaterInterruptions(window._liveWaterInterruptions || []);
+}
+
+function renderWaterInterruptions(interruptions) {
+  var list = document.getElementById('water-interruption-list');
+  if (!list) return;
+
+  var filtered = interruptions.filter(function(item) {
+    var utilOk = activeWaterUtility === 'All' || item.utility === activeWaterUtility;
+    if (!utilOk) return false;
+    if (waterSearchQuery) {
+      var hay = [item.area||'', item.barangay||'', item.utility||'', item.reason||'', item.date||''].join(' ').toLowerCase();
+      if (hay.indexOf(waterSearchQuery) === -1) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div style="background:var(--green-bg);border:1px solid rgba(26,122,82,.2);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--green);font-weight:500;">' +
+      (waterSearchQuery ? '🔍 No results for "' + waterSearchQuery + '"' : '✅ No water service advisories at this time.') + '</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  filtered.forEach(function(item) {
+    var isEmergency = item.type === 'emergency';
+    var isMaynilad = item.utility === 'Maynilad';
+    var utilColor = isMaynilad ? '#1a5fa0' : '#0d7a5f';
+    var utilBg    = isMaynilad ? 'rgba(26,95,160,.1)' : 'rgba(13,122,95,.1)';
+    var bg        = isEmergency ? 'var(--red-bg)' : 'var(--surface)';
+    var border    = isEmergency ? 'rgba(184,50,50,.2)' : 'var(--border)';
+    var typeColor = isEmergency ? '#b83232' : '#1a4fa0';
+    var typeBg    = isEmergency ? 'rgba(184,50,50,.12)' : 'rgba(26,79,160,.1)';
+    var typeLabel = isEmergency ? 'EMERGENCY' : 'SCHEDULED';
+
+    var bayChips = '';
+    if (item.barangay) {
+      bayChips = item.barangay.split(',').map(function(b) {
+        b = b.trim();
+        return b ? '<span style="font-size:11px;background:rgba(26,95,160,.07);border:1px solid rgba(26,95,160,.18);border-radius:4px;padding:2px 7px;color:#1a4fa0;white-space:nowrap;">' + b + '</span>' : '';
+      }).filter(Boolean).join('');
+    }
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:' + bg + ';border:1px solid ' + border + ';border-radius:12px;padding:14px 16px;';
+    card.innerHTML =
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:' + (bayChips ? '8px' : '6px') + ';">' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+          '<span style="font-size:13px;font-weight:700;letter-spacing:.2px;">' + (item.area || 'Unknown Area') + '</span>' +
+          '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + utilBg + ';color:' + utilColor + ';">' + (item.utility||'') + '</span>' +
+          '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + typeBg + ';color:' + typeColor + ';">' + typeLabel + '</span>' +
+        '</div>' +
+        '<span style="font-size:10px;color:var(--text3);white-space:nowrap;flex-shrink:0;">' + (item.date||'') + '</span>' +
+      '</div>' +
+      (bayChips ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">' + bayChips + '</div>' : '') +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text2);">' +
+        (item.time ? '<span>⏰ ' + item.time + '</span>' : '') +
+        (item.reason ? '<span style="color:var(--text3);">· ' + item.reason + '</span>' : '') +
+      '</div>';
+    list.appendChild(card);
+  });
+}
+
+function applyLiveWaterData(d) {
+  if (!d) return;
+
+  // Dam status card
+  if (d.dam_status) {
+    var ds = d.dam_status;
+    var box = document.getElementById('dam-status-box');
+    if (box) { box.style.background = ds.bg || 'var(--surface)'; box.style.borderColor = ds.border || 'var(--border)'; }
+    var titleEl = document.getElementById('dam-title');
+    if (titleEl) { titleEl.textContent = ds.title || 'Angat Dam'; titleEl.style.color = ds.color || 'var(--text)'; }
+    var subEl = document.getElementById('dam-sub');
+    if (subEl) subEl.textContent = ds.subtitle || '';
+    var iconEl = document.getElementById('dam-icon');
+    if (iconEl) {
+      iconEl.textContent = ds.color === '#b83232' ? '🚨' : ds.color === '#b85a00' ? '🔶' : ds.color === '#8a5a00' ? '⚠️' : '💧';
+    }
+    if (ds.level != null) {
+      var gaugeWrap = document.getElementById('dam-gauge-wrap');
+      if (gaugeWrap) gaugeWrap.style.display = '';
+      var range = (ds.nhwl || 212) - (ds.mddl || 180);
+      var pct = Math.max(0, Math.min(100, ((ds.level - (ds.mddl || 180)) / range) * 100));
+      var fill = document.getElementById('dam-gauge-fill');
+      if (fill) { fill.style.width = pct.toFixed(1) + '%'; fill.style.background = ds.color || '#1a7a52'; }
+      var pctEl = document.getElementById('dam-level-pct');
+      if (pctEl) pctEl.textContent = pct.toFixed(0) + '% of operating range';
+      var trendEl = document.getElementById('dam-trend');
+      if (trendEl) {
+        var tIcon = ds.trend === 'rising' ? '↑ Rising' : ds.trend === 'falling' ? '↓ Falling' : '→ Stable';
+        trendEl.textContent = tIcon;
+        trendEl.style.color = ds.trend === 'rising' ? '#1a7a52' : ds.trend === 'falling' ? '#b85a00' : 'var(--text3)';
+      }
+      var asofEl = document.getElementById('dam-as-of');
+      if (asofEl) asofEl.textContent = 'As of ' + (ds.as_of || d.last_updated || '');
+    }
+  }
+
+  var label = document.getElementById('water-updated-label');
+  if (label && d.last_updated) label.textContent = 'Updated ' + d.last_updated;
+
+  if (d.interruptions) {
+    window._liveWaterInterruptions = d.interruptions;
+    var badge = document.getElementById('water-badge');
+    if (badge) {
+      var emergCount = d.interruptions.filter(function(i) { return i.type === 'emergency'; }).length;
+      badge.textContent = emergCount;
+      badge.style.display = emergCount > 0 ? '' : 'none';
+    }
+    initWater();
+  }
+}
 /* ══════════════════════════════════════════════════════════════
    INIT (static parts only — runs after live data or as fallback)
    ══════════════════════════════════════════════════════════════ */
@@ -1561,6 +1775,7 @@ document.addEventListener('DOMContentLoaded', function() {
   init();
   buildCityPriceGrid();
   initPower();
+  initWater();
   fetchLiveData(); // triggers live data load and updates UI when ready
 });
 </script>
