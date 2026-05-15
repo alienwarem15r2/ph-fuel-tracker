@@ -401,27 +401,49 @@ async function scrapeGasWatch(region) {
       }
     }
 
-    // Extract signed weekly adjustment amounts (e.g. "+0.20", "-10.50").
-    // Adjustments are small (±0–25), prices are large (50–150), so the ≤25 guard
-    // prevents accidentally picking up a pump price as an adjustment.
+    // GasWatch shows weekly adjustments as:
+    //   <span class="change-tag change-down">Kerosene −&#8369;13.30/L</span>
+    //   <span class="change-tag change-up">Gasoline +&#8369;0.20/L</span>
+    // Ranges like "Diesel −&#8369;5.00–10.48/L" are skipped (let HIST compute those).
     function extractAdj(keyword) {
-      let m = html.match(new RegExp(keyword + '[^<\\n]{0,200}([+-]\\d{1,2}\\.\\d{2})', 'i'));
-      if (!m) m = html.match(new RegExp('([+-]\\d{1,2}\\.\\d{2})[^<\\n]{0,100}' + keyword, 'i'));
+      const m = html.match(
+        new RegExp('<span([^>]*)class="[^"]*change-tag[^"]*"[^>]*>([^<]*' + keyword + '[^<]*)<\\/span>', 'i')
+      );
       if (!m) return null;
-      const v = parseFloat(m[1]);
-      return (v >= -25 && v <= 25) ? m[1] : null;
+      const attrs   = m[1];
+      const content = m[2];
+      // Skip ranges (contain en-dash or two separate numbers like 5.00–10.48)
+      if (/[0-9][–—\-][0-9]/.test(content)) return null;
+      // Extract the numeric value
+      const numM = content.match(/([0-9]+\.[0-9]+)/);
+      if (!numM) return null;
+      const val = parseFloat(numM[1]);
+      if (val < 0.01 || val > 50) return null;
+      // Direction from class name or sign character in content
+      if (attrs.includes('change-down') || /[\-−]/.test(content)) return '-' + val.toFixed(2);
+      if (attrs.includes('change-up')   || content.includes('+'))        return '+' + val.toFixed(2);
+      return null;
     }
 
     const adjustment = {
-      gasoline_ron91_95: extractAdj('gasoline') || extractAdj('unleaded'),
-      diesel_std: extractAdj('diesel'),
-      kerosene: extractAdj('kerosene'),
-      lpg_per_kg: extractAdj('lpg'),
+      gasoline_ron91_95: extractAdj('Gasoline') || extractAdj('Unleaded'),
+      diesel_std:        extractAdj('Diesel'),
+      kerosene:          extractAdj('Kerosene'),
+      lpg_per_kg:        extractAdj('LPG') || extractAdj('Lpg'),
       note: "GasWatch PH community + DOE data"
     };
 
     if (prices.petron.ron91 < 50 || prices.petron.ron91 > 150) {
       throw new Error("GasWatch scraper returned unrealistic prices");
+    }
+
+    // Kerosene fallback: GasWatch doesn't publish it, so estimate from diesel.
+    // The DOE adjustment scraper provides the correct weekly change separately.
+    if (!prices.petron.kerosene && prices.petron.diesel_std > 50) {
+      prices.petron.kerosene = Math.round((prices.petron.diesel_std - 0.75) * 100) / 100;
+    }
+    if (!prices.shell.kerosene && prices.shell.diesel_std > 50) {
+      prices.shell.kerosene = Math.round((prices.shell.diesel_std - 1.79) * 100) / 100;
     }
 
     return { prices, adjustment, foundCount };
