@@ -456,6 +456,13 @@
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;" id="city-tabs"></div>
 
+      <!-- Area search -->
+      <div style="position:relative;margin-bottom:10px;">
+        <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:var(--text3);fill:none;stroke-width:2;" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="area-search" placeholder="Search city, barangay, or street…"
+          style="width:100%;padding:8px 12px 8px 30px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);outline:none;">
+      </div>
+
       <!-- Interruption list -->
       <div id="interruption-list" style="display:flex;flex-direction:column;gap:8px;">
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">Loading power interruption data…</div>
@@ -1253,6 +1260,7 @@ function buildCityPriceGrid() {
    ══════════════════════════════════════════════════════════════ */
 var activePowerRegion = 'ncr';
 var activePowerCity = 'All';
+var powerSearchQuery = '';
 
 /* Static fallback interruptions (shown only if live data fails to load) */
 var STATIC_INTERRUPTIONS = [];
@@ -1262,27 +1270,38 @@ function initPower() {
     ? window._liveInterruptions
     : STATIC_INTERRUPTIONS;
 
-  // Build city tab list
-  var cities = ['All'];
+  // Build tabs from province (for emergency entries) or city (for scheduled)
+  var tabs = ['All'];
   interruptions.forEach(function(item) {
-    if (cities.indexOf(item.city) === -1) cities.push(item.city);
+    var key = item.province || item.city;
+    if (tabs.indexOf(key) === -1) tabs.push(key);
   });
 
   var tabsEl = document.getElementById('city-tabs');
   tabsEl.innerHTML = '';
-  cities.forEach(function(city) {
+  tabs.forEach(function(tab) {
     var btn = document.createElement('button');
-    btn.className = 'ftab' + (city === activePowerCity ? ' on' : '');
+    btn.className = 'ftab' + (tab === activePowerCity ? ' on' : '');
     btn.style.cssText = 'font-size:11px;margin-bottom:4px;';
-    btn.textContent = city;
+    btn.textContent = tab;
     btn.onclick = function() {
-      activePowerCity = city;
+      activePowerCity = tab;
       document.querySelectorAll('#city-tabs .ftab').forEach(function(b){ b.classList.remove('on'); });
       btn.classList.add('on');
       renderInterruptions(interruptions);
     };
     tabsEl.appendChild(btn);
   });
+
+  // Wire up search input
+  var searchEl = document.getElementById('area-search');
+  if (searchEl) {
+    searchEl.value = powerSearchQuery;
+    searchEl.oninput = function() {
+      powerSearchQuery = this.value.toLowerCase().trim();
+      renderInterruptions(interruptions);
+    };
+  }
 
   renderInterruptions(interruptions);
 }
@@ -1298,41 +1317,94 @@ function renderInterruptions(interruptions) {
   list.innerHTML = '';
 
   var filtered = interruptions.filter(function(item) {
+    var tabKey = item.province || item.city;
     var regionOk = activePowerRegion === 'all' ||
-      (activePowerRegion === 'pampanga' && item.city.toLowerCase().indexOf('pampanga') !== -1) ||
-      (activePowerRegion === 'ncr' && item.city.toLowerCase().indexOf('pampanga') === -1);
-    var cityOk = activePowerCity === 'All' || item.city === activePowerCity;
-    return regionOk && cityOk;
+      (activePowerRegion === 'pampanga' && (item.province||item.city).toLowerCase().indexOf('pampanga') !== -1) ||
+      (activePowerRegion === 'ncr' && (item.province||item.city).toLowerCase().indexOf('pampanga') === -1);
+    var cityOk = activePowerCity === 'All' || tabKey === activePowerCity;
+    if (!regionOk || !cityOk) return false;
+    if (powerSearchQuery) {
+      var hay = [item.city, item.province||'', item.barangay||'', (item.windows||[]).join(' '), item.date||'', item.reason||''].join(' ').toLowerCase();
+      if (hay.indexOf(powerSearchQuery) === -1) return false;
+    }
+    return true;
   });
 
   if (filtered.length === 0) {
-    list.innerHTML = '<div style="background:var(--green-bg);border:1px solid rgba(26,122,82,.2);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--green);font-weight:500;">✅ No interruptions found for this filter.</div>';
+    list.innerHTML = '<div style="background:var(--green-bg);border:1px solid rgba(26,122,82,.2);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--green);font-weight:500;">' + (powerSearchQuery ? '🔍 No results for "' + powerSearchQuery + '"' : '✅ No interruptions found for this filter.') + '</div>';
     return;
   }
 
   filtered.forEach(function(item) {
     var isEmergency = item.type === 'emergency';
     var isClear = item.type === 'clear';
-    var bg = isEmergency ? '#fdeaea' : isClear ? '#e6f5ed' : 'var(--surface)';
-    var border = isEmergency ? 'rgba(184,50,50,.2)' : isClear ? 'rgba(26,122,82,.2)' : 'var(--border)';
-    var dot = isEmergency ? '#b83232' : isClear ? '#1a7a52' : '#1a4fa0';
+    var bg     = isEmergency ? '#fdeaea'             : isClear ? '#e6f5ed'            : 'var(--surface)';
+    var border = isEmergency ? 'rgba(184,50,50,.2)'  : isClear ? 'rgba(26,122,82,.2)' : 'var(--border)';
+    var dot    = isEmergency ? '#b83232'             : isClear ? '#1a7a52'            : '#1a4fa0';
+    var accent = isEmergency ? '#b83232'             : isClear ? '#1a7a52'            : '#1a4fa0';
     var typeLabel = isEmergency ? 'Emergency' : isClear ? 'No interruption' : 'Scheduled';
 
     var card = document.createElement('div');
     card.style.cssText = 'background:' + bg + ';border:1px solid ' + border + ';border-radius:12px;padding:14px 16px;';
-    card.innerHTML =
-      '<div style="display:flex;align-items:flex-start;gap:10px;">' +
-      '<div style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;margin-top:5px;"></div>' +
-      '<div style="flex:1;">' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">' +
-      '<span style="font-size:13px;font-weight:600;color:var(--text);">' + item.city + '</span>' +
-      '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + dot + ';color:#fff;">' + typeLabel.toUpperCase() + '</span>' +
-      '<span style="font-size:11px;color:var(--text3);margin-left:auto;">' + item.date + ' · ' + item.time + '</span>' +
-      '</div>' +
-      '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;"><strong>Areas:</strong> ' + item.barangay + '</div>' +
-      (item.street && item.street !== '—' ? '<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">' + item.street + '</div>' : '') +
-      '<div style="font-size:12px;color:var(--text2);">' + item.reason + '</div>' +
-      '</div></div>';
+
+    if (isEmergency && item.windows && item.windows.length > 0) {
+      // ── Emergency MLD card — province/city + barangay chips + window chips ──
+      var provBadge = item.province
+        ? '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(184,50,50,.12);color:#b83232;font-weight:600;">' + item.province + '</span>'
+        : '';
+      var bayChips = (item.barangay && item.barangay !== 'See Meralco advisory')
+        ? item.barangay.split(', ').map(function(b) {
+            return '<span style="font-size:11px;background:rgba(184,50,50,.08);border:1px solid rgba(184,50,50,.18);border-radius:4px;padding:2px 7px;color:#7a2020;white-space:nowrap;">' + b + '</span>';
+          }).join('')
+        : '<span style="font-size:11px;color:var(--text3);">See Meralco advisory</span>';
+      var winChips = item.windows.map(function(w) {
+        // Shorten "Between 2:01PM and 5:00PM" → "2:01–5:00 PM"
+        var short = w.replace(/Between\s+/i,'').replace(/\s+and\s+/i,' – ');
+        return '<span style="font-size:11px;background:' + accent + ';color:#fff;border-radius:4px;padding:2px 8px;white-space:nowrap;">' + short + '</span>';
+      }).join('');
+
+      card.innerHTML =
+        '<div style="display:flex;align-items:flex-start;gap:10px;">' +
+        '<div style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;margin-top:5px;"></div>' +
+        '<div style="flex:1;min-width:0;">' +
+        // Header row
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">' +
+        '<span style="font-size:13px;font-weight:600;color:var(--text);">' + item.city + '</span>' +
+        provBadge +
+        '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + dot + ';color:#fff;">' + typeLabel.toUpperCase() + '</span>' +
+        '<span style="font-size:11px;color:var(--text3);margin-left:auto;">' + item.date + '</span>' +
+        '</div>' +
+        // Barangay chips
+        '<div style="margin-bottom:8px;">' +
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:' + accent + ';margin-bottom:5px;">Affected Barangays</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:4px;">' + bayChips + '</div>' +
+        '</div>' +
+        // Window chips
+        '<div>' +
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:' + accent + ';margin-bottom:5px;">Possible Brownout Windows</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:4px;">' + winChips + '</div>' +
+        '</div>' +
+        // Reason
+        '<div style="font-size:11px;color:var(--text3);margin-top:8px;">' + item.reason + '</div>' +
+        '</div></div>';
+
+    } else {
+      // ── Scheduled / standard card ──
+      card.innerHTML =
+        '<div style="display:flex;align-items:flex-start;gap:10px;">' +
+        '<div style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;margin-top:5px;"></div>' +
+        '<div style="flex:1;">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">' +
+        '<span style="font-size:13px;font-weight:600;color:var(--text);">' + item.city + '</span>' +
+        '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + dot + ';color:#fff;">' + typeLabel.toUpperCase() + '</span>' +
+        '<span style="font-size:11px;color:var(--text3);margin-left:auto;">' + item.date + ' · ' + item.time + '</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;"><strong>Areas:</strong> ' + item.barangay + '</div>' +
+        (item.street && item.street !== '—' ? '<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">' + item.street + '</div>' : '') +
+        '<div style="font-size:12px;color:var(--text2);">' + item.reason + '</div>' +
+        '</div></div>';
+    }
+
     list.appendChild(card);
   });
 }
