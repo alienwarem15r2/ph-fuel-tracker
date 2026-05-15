@@ -1,4 +1,4 @@
-// api/chat.js — Hybrid: DOE Scraper (primary) + Gemini (fallback) + Groq (chat only)
+// api/chat.js — Hybrid: GasWatch PH Scraper (primary) + Gemini (fallback) + Groq (chat only)
 // Env vars: GEMINI_API_KEY, GROQ_API_KEY
 
 const GROQ_BASE = "https://api.groq.com/openai/v1";
@@ -7,13 +7,13 @@ const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_MODEL = "gemini-2.0-flash";
 
-// DOE price monitoring URLs
-const DOE_URLS = {
-  metro_manila: "https://doe.gov.ph/price-monitoring-charts?q=retail-pump-prices-metro-manila",
-  north_luzon: "https://doe.gov.ph/articles/3261451--north-luzon-pump-prices-draft?title=List%20of%20North%20Luzon%20Pump%20Prices",
-  south_luzon: "https://doe.gov.ph/price-monitoring-charts?q=retail-pump-prices-south-luzon",
-  visayas: "https://doe.gov.ph/price-monitoring-charts?q=retail-pump-prices-visayas",
-  mindanao: "https://doe.gov.ph/price-monitoring-charts?q=retail-pump-prices-mindanao"
+// GasWatch PH URLs
+const GASWATCH_URLS = {
+  metro_manila: "https://gaswatchph.com/",
+  cavite: "https://gaswatchph.com/cavite",
+  rizal: "https://gaswatchph.com/rizal",
+  laguna: "https://gaswatchph.com/laguna",
+  pampanga: "https://gaswatchph.com/pampanga"
 };
 
 // ── 15-min server cache ──
@@ -99,7 +99,7 @@ async function handleChat(system, messages, res) {
   return res.status(200).json({ content: [{ text }] });
 }
 
-/* ── FUEL (DOE Scraper → Gemini → Groq → Static) ── */
+/* ── FUEL (GasWatch PH → Gemini → Groq → Static) ── */
 async function handleFuel(res, region) {
   const cached = getCache("fuel");
   if (cached) {
@@ -112,34 +112,34 @@ async function handleFuel(res, region) {
   let source = null;
   const geminiKey = process.env.GEMINI_API_KEY;
 
-  // 1. DOE Scraper (primary — official government source)
+  // 1. GasWatch PH Scraper (primary — community + DOE combined)
   try {
-    const doeData = await scrapeDOEPrices(region);
-    if (doeData && doeData.prices && doeData.prices.petron && doeData.prices.petron.ron91 > 50) {
+    const gwData = await scrapeGasWatch(region);
+    if (gwData && gwData.prices && gwData.prices.petron && gwData.prices.petron.ron91 > 50) {
       result = {
         effective_date: today,
         week_label: `Week of ${today}`,
-        doe_adjustment: doeData.adjustment || {
+        doe_adjustment: gwData.adjustment || {
           gasoline_ron91_95: "0.00",
           diesel_std: "0.00",
           kerosene: "0.00",
           lpg_per_kg: "0.00",
-          note: "Prices from DOE official monitoring"
+          note: "Prices from GasWatch PH community + DOE data"
         },
-        prices: doeData.prices,
-        trend_context: doeData.trend || "Live DOE data",
+        prices: gwData.prices,
+        trend_context: gwData.trend || "Live GasWatch PH data",
         next_week_signal: null,
         fill_up_advice: null,
-        sources: [DOE_URLS[region] || DOE_URLS.metro_manila]
+        sources: [GASWATCH_URLS[region] || GASWATCH_URLS.metro_manila]
       };
-      source = "doe";
-      console.log("[fuel] DOE scraper OK, ron91:", doeData.prices.petron.ron91);
+      source = "gaswatch";
+      console.log("[fuel] GasWatch OK, ron91:", gwData.prices.petron.ron91);
     }
   } catch (e) {
-    console.warn("[fuel] DOE scraper failed:", e.message);
+    console.warn("[fuel] GasWatch scraper failed:", e.message);
   }
 
-  // 2. Gemini fallback (if DOE fails)
+  // 2. Gemini fallback
   if (!result && geminiKey) {
     try {
       const raw = await geminiGenerate(geminiKey, buildFuelPrompt(today));
@@ -178,7 +178,7 @@ async function handleFuel(res, region) {
     }
   }
 
-  // 4. Static emergency fallback (updated to fuelprice.ph May 12-18, 2026)
+  // 4. Static emergency fallback (GasWatch PH May 13-19, 2026)
   if (!result) {
     result = {
       effective_date: today,
@@ -188,14 +188,14 @@ async function handleFuel(res, region) {
         diesel_std: "-9.57",
         kerosene: "-13.30",
         lpg_per_kg: "-13.42",
-        note: "Week of May 12: gasoline +₱0.47/L, diesel rolled back ₱9.57/L, kerosene rolled back ₱13.30/L"
+        note: "Week of May 13: gasoline +₱0.47/L, diesel rolled back ₱9.57/L, kerosene rolled back ₱13.30/L"
       },
       prices: {
-        petron: { ron91: 94.37, ron95: 98.37, ron100: 108.00, diesel_std: 83.22, diesel_prem: 86.32, kerosene: 107.33 },
-        shell:  { ron91: 97.00, ron95: 101.00, ron97: 104.00, diesel_std: 85.50, diesel_prem: 88.50, kerosene: 110.00 },
-        unioil: { ron91: 94.00, ron95: 97.00, diesel_std: 83.00 }
+        petron: { ron91: 84.45, ron95: 87.55, ron100: 97.60, diesel_std: 79.90, diesel_prem: 84.15, kerosene: 79.15 },
+        shell:  { ron91: 91.08, ron95: 94.18, ron97: 97.72, diesel_std: 83.79, diesel_prem: 88.49, kerosene: 82.00 },
+        unioil: { ron91: 86.66, ron95: 89.66, diesel_std: 86.83 }
       },
-      trend_context: "Prices from fuelprice.ph Week of May 12-18, 2026.",
+      trend_context: "Prices from GasWatch PH Week of May 13-19, 2026.",
       next_week_signal: "Check back Tuesday for DOE adjustment.",
       fill_up_advice: "Diesel and kerosene rolled back significantly this week — good time to fill up.",
       sources: ["static-fallback"]
@@ -287,9 +287,9 @@ async function handlePower(res) {
   return res.status(200).json(result);
 }
 
-/* ── DOE SCRAPER ── */
-async function scrapeDOEPrices(region) {
-  const url = DOE_URLS[region] || DOE_URLS.metro_manila;
+/* ── GASWATCH PH SCRAPER ── */
+async function scrapeGasWatch(region) {
+  const url = GASWATCH_URLS[region] || GASWATCH_URLS.metro_manila;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
 
@@ -310,68 +310,88 @@ async function scrapeDOEPrices(region) {
     if (!res.ok) throw new Error("HTTP " + res.status);
     const html = await res.text();
 
-    // Extract prices from DOE table structure
+    // Extract from GasWatch PH table structure
     const prices = {
       petron: { ron91: 0, ron95: 0, ron100: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
       shell:  { ron91: 0, ron95: 0, ron97: 0, diesel_std: 0, diesel_prem: 0, kerosene: 0 },
       unioil: { ron91: 0, ron95: 0, diesel_std: 0 }
     };
 
-    // Try multiple extraction patterns for DOE's various page formats
-    const patterns = [
-      // Pattern 1: Table rows with brand names
-      { re: /Petron[\s\S]{0,300}?RON\s*91[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'petron', fuel: 'ron91' },
-      { re: /Petron[\s\S]{0,300}?RON\s*95[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'petron', fuel: 'ron95' },
-      { re: /Petron[\s\S]{0,300}?Diesel[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'petron', fuel: 'diesel_std' },
-      { re: /Petron[\s\S]{0,300}?Kerosene[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'petron', fuel: 'kerosene' },
-      { re: /Shell[\s\S]{0,300}?RON\s*91[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'shell', fuel: 'ron91' },
-      { re: /Shell[\s\S]{0,300}?RON\s*95[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'shell', fuel: 'ron95' },
-      { re: /Shell[\s\S]{0,300}?Diesel[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'shell', fuel: 'diesel_std' },
-      { re: /Shell[\s\S]{0,300}?Kerosene[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'shell', fuel: 'kerosene' },
-      { re: /Unioil[\s\S]{0,300}?RON\s*91[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'unioil', fuel: 'ron91' },
-      { re: /Unioil[\s\S]{0,300}?RON\s*95[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'unioil', fuel: 'ron95' },
-      { re: /Unioil[\s\S]{0,300}?Diesel[\s\S]{0,100}?[₱P]\s?(\d{2,3}\.\d{2})/i, brand: 'unioil', fuel: 'diesel_std' },
-    ];
+    // Pattern 1: Table rows with brand names (GasWatch PH format)
+    // Brand | Diesel | Unleaded
+    const tablePattern = /<tr[^>]*>[\s\S]*?<td[^>]*>(.*?)<\/td>[\s\S]*?<td[^>]*>(.*?)<\/td>[\s\S]*?<td[^>]*>(.*?)<\/td>[\s\S]*?<\/tr>/gi;
+    let match;
+    let foundBrands = 0;
 
-    let foundCount = 0;
-    for (const p of patterns) {
-      const m = html.match(p.re);
-      if (m && prices[p.brand] && prices[p.brand][p.fuel] !== undefined) {
-        prices[p.brand][p.fuel] = parseFloat(m[1]);
-        foundCount++;
+    while ((match = tablePattern.exec(html)) !== null) {
+      const brand = match[1].replace(/<[^>]+>/g, '').trim().toLowerCase();
+      const diesel = parseFloat(match[2].replace(/<[^>]+>/g, '').replace(/[₱,]/g, '').trim()) || 0;
+      const unleaded = parseFloat(match[3].replace(/<[^>]+>/g, '').replace(/[₱,]/g, '').trim()) || 0;
+
+      if (brand.includes('petron') && diesel > 50) {
+        prices.petron.diesel_std = diesel;
+        prices.petron.ron91 = unleaded;
+        // Estimate ron95 as +3.00 from ron91 (typical spread)
+        prices.petron.ron95 = unleaded + 3.00;
+        prices.petron.ron100 = unleaded + 13.00;
+        prices.petron.diesel_prem = diesel + 4.25;
+        prices.petron.kerosene = diesel - 0.75; // kerosene typically near diesel
+        foundBrands++;
+      }
+      if (brand.includes('shell') && diesel > 50) {
+        prices.shell.diesel_std = diesel;
+        prices.shell.ron91 = unleaded;
+        prices.shell.ron95 = unleaded + 3.00;
+        prices.shell.ron97 = unleaded + 6.50;
+        prices.shell.diesel_prem = diesel + 4.70;
+        prices.shell.kerosene = diesel - 1.79;
+        foundBrands++;
+      }
+      if (brand.includes('unioil') && diesel > 50) {
+        prices.unioil.diesel_std = diesel;
+        prices.unioil.ron91 = unleaded;
+        prices.unioil.ron95 = unleaded + 3.00;
+        foundBrands++;
       }
     }
 
-    // Pattern 2: Generic table extraction (DOE often uses tables)
-    if (foundCount < 3) {
-      // Try to find all prices in the page and assign by proximity to brand names
-      const allPrices = html.match(/[₱P]\s?(\d{2,3}\.\d{2})/g) || [];
-      const priceNums = allPrices.map(p => parseFloat(p.replace(/[₱P]\s?/, '')));
-      
-      // If we have enough prices, try to map them by position
-      if (priceNums.length >= 6) {
-        // Sort and assign: lowest are usually diesel/kerosene, highest are premium
-        priceNums.sort((a, b) => a - b);
-        // This is heuristic — better to rely on Pattern 1
-      }
+    // Pattern 2: If table parsing failed, try specific brand patterns
+    if (foundBrands < 2) {
+      const petronDiesel = html.match(/Petron[\s\S]{0,200}?(?:Diesel[\s\S]{0,50}?)?[₱P]\s?(\d{2,3}\.\d{2})/i);
+      const petronUnleaded = html.match(/Petron[\s\S]{0,200}?(?:Unleaded[\s\S]{0,50}?)?[₱P]\s?(\d{2,3}\.\d{2})/i);
+      const shellDiesel = html.match(/Shell[\s\S]{0,200}?(?:Diesel[\s\S]{0,50}?)?[₱P]\s?(\d{2,3}\.\d{2})/i);
+      const shellUnleaded = html.match(/Shell[\s\S]{0,200}?(?:Unleaded[\s\S]{0,50}?)?[₱P]\s?(\d{2,3}\.\d{2})/i);
+      const unioilDiesel = html.match(/Unioil[\s\S]{0,200}?(?:Diesel[\s\S]{0,50}?)?[₱P]\s?(\d{2,3}\.\d{2})/i);
+      const unioilUnleaded = html.match(/Unioil[\s\S]{0,200}?(?:Unleaded[\s\S]{0,50}?)?[₱P]\s?(\d{2,3}\.\d{2})/i);
+
+      if (petronDiesel) prices.petron.diesel_std = parseFloat(petronDiesel[1]);
+      if (petronUnleaded) prices.petron.ron91 = parseFloat(petronUnleaded[1]);
+      if (shellDiesel) prices.shell.diesel_std = parseFloat(shellDiesel[1]);
+      if (shellUnleaded) prices.shell.ron91 = parseFloat(shellUnleaded[1]);
+      if (unioilDiesel) prices.unioil.diesel_std = parseFloat(unioilDiesel[1]);
+      if (unioilUnleaded) prices.unioil.ron91 = parseFloat(unioilUnleaded[1]);
     }
 
-    // Extract adjustment info from page text
-    const adjMatch = html.match(/(?:gasoline|diesel|kerosene)[\s\S]{0,50}?([+-]?\d+\.\d+)[\s\S]{0,20}?per\s?liter/i);
+    // Extract adjustment from page text
+    const adjMatch = html.match(/Week of[\s\S]{0,100}?(?:Gasoline|Diesel|Kerosene)[\s\S]{0,50}?([+-]?\d+\.\d+)[\s\S]{0,20}?\/L/i);
     const adjustment = {
       gasoline_ron91_95: "0.00",
       diesel_std: "0.00",
       kerosene: "0.00",
       lpg_per_kg: "0.00",
-      note: "DOE official monitoring data"
+      note: "GasWatch PH community + DOE data"
     };
 
-    // Validate: DOE prices should be in realistic range
+    // Extract trend note
+    const trendMatch = html.match(/Metro Manila averages are[\s\S]{0,200}?based on/i);
+    const trend = trendMatch ? trendMatch[0] : "Live GasWatch PH data";
+
+    // Validate
     if (prices.petron.ron91 < 50 || prices.petron.ron91 > 150) {
-      throw new Error("DOE scraper returned unrealistic prices");
+      throw new Error("GasWatch scraper returned unrealistic prices");
     }
 
-    return { prices, adjustment, foundCount };
+    return { prices, adjustment, trend, foundBrands };
   } catch (e) {
     clearTimeout(timeout);
     throw e;
@@ -380,7 +400,7 @@ async function scrapeDOEPrices(region) {
 
 /* ── PROMPT BUILDERS ── */
 function buildFuelPrompt(today) {
-  return `Today is ${today}. Search fuelprice.ph and gaswatchph.com for current PH pump prices (Petron/Shell/Unioil NCR) and latest DOE weekly adjustment. Return ONLY compact JSON, no markdown, no explanation. RON91 realistic ₱80-95, diesel ₱75-90. Use null if unavailable.
+  return `Today is ${today}. Search gaswatchph.com for current PH pump prices (Petron/Shell/Unioil) and latest DOE weekly adjustment. Return ONLY compact JSON, no markdown, no explanation. RON91 realistic ₱80-95, diesel ₱75-90. Use null if unavailable.
 {"effective_date":"${today}","week_label":"Week of ${today}","doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null},"prices":{"petron":{"ron91":null,"ron95":null,"ron100":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"shell":{"ron91":null,"ron95":null,"ron97":null,"diesel_std":null,"diesel_prem":null,"kerosene":null},"unioil":{"ron91":null,"ron95":null,"diesel_std":null}},"trend_context":null,"next_week_signal":null,"fill_up_advice":null,"sources":[]}`;
 }
 
