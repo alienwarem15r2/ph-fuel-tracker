@@ -277,26 +277,26 @@ async function fetchNGCPPage() {
 }
 
 function parseNGCPOutlook(html) {
-  const tableIdx = html.indexOf('id="table-dailyoutlook"');
-  if (tableIdx === -1) throw new Error('PSO table not found in NGCP page');
-  const tableStart = html.lastIndexOf('<table', tableIdx);
-  const tableEnd   = html.indexOf('</table>', tableIdx) + 8;
-  const tableHtml  = html.substring(tableStart, tableEnd);
+  if (html.indexOf('table-dailyoutlook') === -1) throw new Error('PSO table not found in NGCP page');
 
-  const cells = [];
-  for (const m of tableHtml.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
-    const text = m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').trim();
-    if (text) cells.push(text);
-  }
+  const extract = id => {
+    const m = html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`));
+    return m ? m[1].trim() : null;
+  };
+  const pn = s => { const n = parseInt((s||'').replace(/[,\s]/g,''), 10); return isNaN(n) ? null : n; };
 
-  const asOf   = (cells.find(c => /as of/i.test(c)) || '').replace(/[()]/g,'').replace(/as of /i,'').trim();
-  const capIdx = cells.findIndex(c => /available.*generating/i.test(c));
-  const demIdx = cells.findIndex(c => /system.*peak.*demand/i.test(c));
-  const marIdx = cells.findIndex(c => /operating.*margin/i.test(c));
-  if (marIdx === -1) throw new Error('Operating Margin row not found');
+  const rawDate = extract('cell-ReportDate') || '';
+  const asOf    = rawDate.replace(/[()]/g,'').replace(/as of /i,'').trim();
+  const luzCap  = pn(extract('cell-LuzonCapacity'));
+  const visCap  = pn(extract('cell-VisayasCapacity'));
+  const minCap  = pn(extract('cell-MindanaoCapacity'));
+  const luzDem  = pn(extract('cell-LuzonPeak'));
+  const visDem  = pn(extract('cell-VisayasPeak'));
+  const minDem  = pn(extract('cell-MindanaoPeak'));
+  const luzMar  = pn(extract('cell-LuzonReserve'));
+  const visMar  = pn(extract('cell-VisayasReserve'));
+  const minMar  = pn(extract('cell-MindanaoReserve'));
 
-  const pn = s => { const n = parseInt((s||'').replace(/[,\s]/g,''),10); return isNaN(n) ? null : n; };
-  const luzMar = pn(cells[marIdx+1]), visMar = pn(cells[marIdx+2]), minMar = pn(cells[marIdx+3]);
   if (luzMar === null) throw new Error('Luzon margin not parsed');
 
   let level, color, bg, border, title, subtitle;
@@ -318,9 +318,9 @@ function parseNGCPOutlook(html) {
     level, title, subtitle, color, bg, border, alert_times: [],
     pso: {
       as_of: asOf,
-      luzon:    { capacity: pn(cells[capIdx+1]), demand: pn(cells[demIdx+1]), margin: luzMar },
-      visayas:  { capacity: pn(cells[capIdx+2]), demand: pn(cells[demIdx+2]), margin: visMar },
-      mindanao: { capacity: pn(cells[capIdx+3]), demand: pn(cells[demIdx+3]), margin: minMar }
+      luzon:    { capacity: luzCap, demand: luzDem, margin: luzMar },
+      visayas:  { capacity: visCap, demand: visDem, margin: visMar },
+      mindanao: { capacity: minCap, demand: minDem, margin: minMar }
     }
   };
 }
