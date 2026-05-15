@@ -110,43 +110,37 @@ async function handleFuel(res, region) {
   let result = null;
   let source = null;
   const geminiKey = process.env.GEMINI_API_KEY;
+  const groqKey   = process.env.GROQ_API_KEY;
 
-  // 1. GasWatch PH Scraper (primary)
-  try {
-    const gwData = await scrapeGasWatch(region);
-    if (gwData && gwData.prices && gwData.prices.petron && gwData.prices.petron.ron91 > 50) {
-      result = {
-        effective_date: today,
-        week_label: `Week of ${today}`,
-        doe_adjustment: gwData.adjustment || {
-          gasoline_ron91_95: null,
-          diesel_std: null,
-          kerosene: null,
-          lpg_per_kg: null,
-          note: "Prices from GasWatch PH community + DOE data"
-        },
-        prices: gwData.prices,
-        trend_context: gwData.trend || "Live GasWatch PH data",
-        next_week_signal: null,
-        fill_up_advice: null,
-        sources: [GASWATCH_URLS[region] || GASWATCH_URLS.metro_manila]
-      };
-      source = "gaswatch";
-      console.log("[fuel] GasWatch OK, ron91:", gwData.prices.petron.ron91);
+  // 1. GasWatch + DOE adjustment fetch in parallel (GasWatch gives prices, AI gives adjustment)
+  const [gwData, adjData] = await Promise.all([
+    scrapeGasWatch(region).catch(e => { console.warn("[fuel] GasWatch failed:", e.message); return null; }),
+    fetchDOEAdjustment(today, geminiKey, groqKey)
+  ]);
 
-      // GasWatch gives prices but no DOE adjustment amounts — augment with AI search.
-      const adjData = await fetchDOEAdjustment(today, geminiKey, process.env.GROQ_API_KEY);
-      if (adjData) {
-        if (adjData.gasoline_ron91_95) result.doe_adjustment.gasoline_ron91_95 = adjData.gasoline_ron91_95;
-        if (adjData.diesel_std)        result.doe_adjustment.diesel_std        = adjData.diesel_std;
-        if (adjData.kerosene)          result.doe_adjustment.kerosene          = adjData.kerosene;
-        if (adjData.lpg_per_kg)        result.doe_adjustment.lpg_per_kg        = adjData.lpg_per_kg;
-        if (adjData.note)              result.doe_adjustment.note              = adjData.note;
-        console.log("[fuel] DOE adjustment augmented:", adjData);
-      }
+  if (gwData && gwData.prices && gwData.prices.petron && gwData.prices.petron.ron91 > 50) {
+    const baseAdj = gwData.adjustment || { gasoline_ron91_95: null, diesel_std: null, kerosene: null, lpg_per_kg: null, note: "GasWatch PH community + DOE data" };
+    // Merge AI-sourced adjustment values on top of scraped (AI is more accurate for amounts)
+    if (adjData) {
+      if (adjData.gasoline_ron91_95) baseAdj.gasoline_ron91_95 = adjData.gasoline_ron91_95;
+      if (adjData.diesel_std)        baseAdj.diesel_std        = adjData.diesel_std;
+      if (adjData.kerosene)          baseAdj.kerosene          = adjData.kerosene;
+      if (adjData.lpg_per_kg)        baseAdj.lpg_per_kg        = adjData.lpg_per_kg;
+      if (adjData.note)              baseAdj.note              = adjData.note;
+      console.log("[fuel] DOE adjustment augmented:", adjData);
     }
-  } catch (e) {
-    console.warn("[fuel] GasWatch scraper failed:", e.message);
+    result = {
+      effective_date: today,
+      week_label: `Week of ${today}`,
+      doe_adjustment: baseAdj,
+      prices: gwData.prices,
+      trend_context: "Live GasWatch PH data",
+      next_week_signal: null,
+      fill_up_advice: null,
+      sources: [GASWATCH_URLS[region] || GASWATCH_URLS.metro_manila]
+    };
+    source = "gaswatch";
+    console.log("[fuel] GasWatch OK, ron91:", gwData.prices.petron.ron91);
   }
 
   // 2. Gemini fallback (if GasWatch fails)
@@ -447,8 +441,9 @@ async function fetchDOEAdjustment(today, geminiKey, groqKey) {
 
 /* ── PROMPT BUILDERS ── */
 function buildAdjustmentPrompt(today) {
-  return `Today is ${today}. Search for the latest DOE (Department of Energy Philippines) weekly fuel price adjustment that took effect this week. Look at doe.gov.ph, rappler.com, gmanetwork.com, or businessmirror.com.ph. Return ONLY compact JSON with signed strings like "+0.20" or "-9.57" — no markdown, no explanation. Use null if truly unavailable.
-{"doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null}}`;
+  return `Today is ${today} Philippines. Search GMA Network, Rappler, BusinessMirror, or doe.gov.ph for this week's DOE oil price adjustment. You MUST find the kerosene adjustment separately — it is different from diesel. Return ONLY compact JSON, no markdown, no text outside the JSON.
+{"doe_adjustment":{"gasoline_ron91_95":null,"diesel_std":null,"kerosene":null,"lpg_per_kg":null,"note":null}}
+Rules: values are signed strings ("-13.30" = rollback ₱13.30/L, "+0.20" = increase ₱0.20/L). Do NOT reuse the diesel value for kerosene — look up kerosene specifically. Use null only if not found after searching.`;
 }
 
 function buildFuelPrompt(today) {
