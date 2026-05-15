@@ -916,6 +916,36 @@ function renderChart(fuel) {
   var fm = FUEL_MAP[fuel];
   var ctx = document.getElementById('trendChart').getContext('2d');
   if (tChart) tChart.destroy();
+
+  // ── Inject live prices into the last data point ──
+  var lastIdx = HIST.labels.length - 1;
+  if (liveData.fuel && liveData.fuel.prices) {
+    var p = liveData.fuel.prices;
+    if (p.petron) {
+      HIST[fm.petron][lastIdx] = p.petron[fm.petron.replace('petron_','').replace('ron91','ron91').replace('ron95','ron95').replace('diesel','diesel_std')] || HIST[fm.petron][lastIdx];
+      // Cleaner mapping:
+      if (fuel === 'ron91')  HIST.petron_ron91[lastIdx]  = p.petron.ron91  || HIST.petron_ron91[lastIdx];
+      if (fuel === 'ron95')  HIST.petron_ron95[lastIdx]  = p.petron.ron95  || HIST.petron_ron95[lastIdx];
+      if (fuel === 'diesel') HIST.petron_diesel[lastIdx] = p.petron.diesel_std || HIST.petron_diesel[lastIdx];
+    }
+    if (p.shell) {
+      if (fuel === 'ron91')  HIST.shell_ron91[lastIdx]  = p.shell.ron91  || HIST.shell_ron91[lastIdx];
+      if (fuel === 'ron95')  HIST.shell_ron95[lastIdx]  = p.shell.ron95  || HIST.shell_ron95[lastIdx];
+      if (fuel === 'diesel') HIST.shell_diesel[lastIdx] = p.shell.diesel_std || HIST.shell_diesel[lastIdx];
+    }
+    if (p.unioil) {
+      if (fuel === 'ron91')  HIST.unioil_ron91[lastIdx]  = p.unioil.ron91  || HIST.unioil_ron91[lastIdx];
+      if (fuel === 'ron95')  HIST.unioil_ron95[lastIdx]  = p.unioil.ron95  || HIST.unioil_ron95[lastIdx];
+      if (fuel === 'diesel') HIST.unioil_diesel[lastIdx] = p.unioil.diesel_std || HIST.unioil_diesel[lastIdx];
+    }
+  }
+
+  // ── Build location-aware annotation ──
+  var regionLabel = activeRegion === 'ncr' ? 'Metro Manila (NCR) average' :
+                    activeRegion === 'pampanga' ? 'Pampanga average' :
+                    'National average';
+  var noteText = '⚡ ' + regionLabel + ' · Iran war crisis: Mar–Apr peak';
+
   tChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -929,13 +959,33 @@ function renderChart(fuel) {
     options: {
       responsive:true, maintainAspectRatio:false,
       interaction:{mode:'index',intersect:false},
-      plugins:{ legend:{display:false}, tooltip:{backgroundColor:'#1a1917',titleColor:'#fff',bodyColor:'rgba(255,255,255,.8)',padding:10,cornerRadius:8,callbacks:{label:function(c){ return ' '+c.dataset.label+': ₱'+c.parsed.y.toFixed(2); }}} },
+      plugins:{ 
+        legend:{display:false}, 
+        tooltip:{
+          backgroundColor:'#1a1917',
+          titleColor:'#fff',
+          bodyColor:'rgba(255,255,255,.8)',
+          padding:10,
+          cornerRadius:8,
+          callbacks:{
+            label:function(c){ 
+              return ' ' + c.dataset.label + ': ₱' + c.parsed.y.toFixed(2); 
+            }
+          }
+        } 
+      },
       scales:{
         x:{ticks:{font:{size:10},color:'#9e9d97',maxRotation:45,autoSkip:true,maxTicksLimit:9},grid:{display:false},border:{display:false}},
         y:{ticks:{font:{size:10},color:'#9e9d97',callback:function(v){ return '₱'+v; }},grid:{color:'rgba(0,0,0,0.05)'},border:{display:false}}
       }
     }
   });
+
+  // Update the annotation text below the chart
+  var noteEl = document.querySelector('.chart-wrap').nextElementSibling;
+  if (noteEl && noteEl.querySelector('span:last-child')) {
+    noteEl.querySelector('span:last-child').textContent = noteText;
+  }
 }
 
 function switchFuel(fuel, btn) {
