@@ -363,12 +363,18 @@ async function scrapeGasWatch(region) {
         prices.petron.diesel_std = vals[0];
         prices.petron.ron91 = vals[1];
         prices.petron.ron95 = vals[1] + 3.10;
+        prices.petron.ron100 = vals[1] + 13.15;
+        prices.petron.diesel_prem = vals[0] + 4.25;
+        prices.petron.kerosene = vals[0] - 0.75;
       }
       if (shellBlock) {
         const vals = [parseFloat(shellBlock[1]), parseFloat(shellBlock[2])].sort((a,b) => a-b);
         prices.shell.diesel_std = vals[0];
         prices.shell.ron91 = vals[1];
         prices.shell.ron95 = vals[1] + 3.10;
+        prices.shell.ron97 = vals[1] + 6.64;
+        prices.shell.diesel_prem = vals[0] + 4.70;
+        prices.shell.kerosene = vals[0] - 1.79;
       }
       if (unioilBlock) {
         const vals = [parseFloat(unioilBlock[1]), parseFloat(unioilBlock[2])].sort((a,b) => a-b);
