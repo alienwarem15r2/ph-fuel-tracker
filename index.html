@@ -539,10 +539,14 @@
       </div>
 
       <!-- Utility filter tabs -->
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;" id="water-utility-tabs">
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;" id="water-utility-tabs">
         <button class="ftab on" id="wtab-All" onclick="setWaterUtility('All')">All</button>
         <button class="ftab" id="wtab-Maynilad" onclick="setWaterUtility('Maynilad')">Maynilad</button>
         <button class="ftab" id="wtab-Manila Water" onclick="setWaterUtility('Manila Water')">Manila Water</button>
+      </div>
+      <!-- City filter tabs (built dynamically) -->
+      <div id="water-city-tabs" style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:5px;margin-bottom:10px;padding-bottom:4px;scrollbar-width:none;-ms-overflow-style:none;">
+        <button class="ftab on" id="wctab-All" onclick="setWaterCity('All')">All Areas</button>
       </div>
 
       <!-- Search -->
@@ -1636,13 +1640,41 @@ async function sendAI() {
    ══════════════════════════════════════════════════════════════ */
 var activeWaterUtility = 'All';
 var waterSearchQuery = '';
+var activeWaterCity = 'All';
 
 function setWaterUtility(utility) {
   activeWaterUtility = utility;
   document.querySelectorAll('#water-utility-tabs .ftab').forEach(function(b) {
     b.classList.toggle('on', b.id === 'wtab-' + utility);
   });
+  // Rebuild city tabs for new utility selection
+  buildWaterCityTabs(window._liveWaterInterruptions || []);
   renderWaterInterruptions(window._liveWaterInterruptions || []);
+}
+
+function setWaterCity(city) {
+  activeWaterCity = city;
+  document.querySelectorAll('#water-city-tabs .ftab').forEach(function(b) {
+    b.classList.toggle('on', b.id === 'wctab-' + city);
+  });
+  renderWaterInterruptions(window._liveWaterInterruptions || []);
+}
+
+function buildWaterCityTabs(interruptions) {
+  activeWaterCity = 'All';
+  var container = document.getElementById('water-city-tabs');
+  if (!container) return;
+  var filtered = activeWaterUtility === 'All' ? interruptions : interruptions.filter(function(i) { return i.utility === activeWaterUtility; });
+  var cities = [];
+  filtered.forEach(function(item) {
+    if (item.city && cities.indexOf(item.city) === -1) cities.push(item.city);
+  });
+  cities.sort();
+  var html = '<button class="ftab on" id="wctab-All" onclick="setWaterCity(\'All\')">All Areas</button>';
+  cities.forEach(function(city) {
+    html += '<button class="ftab" id="wctab-' + city + '" onclick="setWaterCity(\'' + city.replace(/'/g,"\\'") + '\')">' + city + '</button>';
+  });
+  container.innerHTML = html;
 }
 
 function initWater() {
@@ -1662,10 +1694,10 @@ function renderWaterInterruptions(interruptions) {
   if (!list) return;
 
   var filtered = interruptions.filter(function(item) {
-    var utilOk = activeWaterUtility === 'All' || item.utility === activeWaterUtility;
-    if (!utilOk) return false;
+    if (activeWaterUtility !== 'All' && item.utility !== activeWaterUtility) return false;
+    if (activeWaterCity !== 'All' && item.city !== activeWaterCity) return false;
     if (waterSearchQuery) {
-      var hay = [item.area||'', item.barangay||'', item.utility||'', item.reason||'', item.date||''].join(' ').toLowerCase();
+      var hay = [item.city||'', item.area||'', item.utility||'', item.reason||'', item.date||'', item.from||''].join(' ').toLowerCase();
       if (hay.indexOf(waterSearchQuery) === -1) return false;
     }
     return true;
@@ -1680,38 +1712,34 @@ function renderWaterInterruptions(interruptions) {
   list.innerHTML = '';
   filtered.forEach(function(item) {
     var isEmergency = item.type === 'emergency';
+    var isRotational = item.type === 'rotational';
     var isMaynilad = item.utility === 'Maynilad';
     var utilColor = isMaynilad ? '#1a5fa0' : '#0d7a5f';
     var utilBg    = isMaynilad ? 'rgba(26,95,160,.1)' : 'rgba(13,122,95,.1)';
-    var bg        = isEmergency ? 'var(--red-bg)' : 'var(--surface)';
-    var border    = isEmergency ? 'rgba(184,50,50,.2)' : 'var(--border)';
-    var typeColor = isEmergency ? '#b83232' : '#1a4fa0';
-    var typeBg    = isEmergency ? 'rgba(184,50,50,.12)' : 'rgba(26,79,160,.1)';
-    var typeLabel = isEmergency ? 'EMERGENCY' : 'SCHEDULED';
+    var bg     = isEmergency ? 'var(--red-bg)' : isRotational ? '#fef3dc' : 'var(--surface)';
+    var border = isEmergency ? 'rgba(184,50,50,.2)' : isRotational ? 'rgba(138,90,0,.2)' : 'var(--border)';
+    var typeColor = isEmergency ? '#b83232' : isRotational ? '#8a5a00' : 'var(--text3)';
+    var typeBg    = isEmergency ? 'rgba(184,50,50,.12)' : isRotational ? 'rgba(138,90,0,.1)' : 'rgba(0,0,0,.06)';
+    var tLabel = item.typeLabel || (isEmergency ? 'Emergency' : 'Scheduled');
 
-    var bayChips = '';
-    if (item.barangay) {
-      bayChips = item.barangay.split(',').map(function(b) {
-        b = b.trim();
-        return b ? '<span style="font-size:11px;background:rgba(26,95,160,.07);border:1px solid rgba(26,95,160,.18);border-radius:4px;padding:2px 7px;color:#1a4fa0;white-space:nowrap;">' + b + '</span>' : '';
-      }).filter(Boolean).join('');
-    }
+    // Date display: Maynilad uses item.date, Manila Water uses item.from/item.to
+    var dateStr = item.date || (item.from && item.to && item.from !== item.to ? item.from + ' – ' + item.to : item.from || '');
 
     var card = document.createElement('div');
     card.style.cssText = 'background:' + bg + ';border:1px solid ' + border + ';border-radius:12px;padding:14px 16px;';
     card.innerHTML =
-      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:' + (bayChips ? '8px' : '6px') + ';">' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px;">' +
         '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-          '<span style="font-size:13px;font-weight:700;letter-spacing:.2px;">' + (item.area || 'Unknown Area') + '</span>' +
+          '<span style="font-size:13px;font-weight:700;">' + (item.city || 'Unknown Area') + '</span>' +
           '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + utilBg + ';color:' + utilColor + ';">' + (item.utility||'') + '</span>' +
-          '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + typeBg + ';color:' + typeColor + ';">' + typeLabel + '</span>' +
+          '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:' + typeBg + ';color:' + typeColor + ';">' + tLabel + '</span>' +
         '</div>' +
-        '<span style="font-size:10px;color:var(--text3);white-space:nowrap;flex-shrink:0;">' + (item.date||'') + '</span>' +
+        '<span style="font-size:10px;color:var(--text3);white-space:nowrap;flex-shrink:0;">' + dateStr + '</span>' +
       '</div>' +
-      (bayChips ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">' + bayChips + '</div>' : '') +
-      '<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text2);">' +
+      (item.area ? '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;line-height:1.4;">' + item.area + '</div>' : '') +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text3);">' +
         (item.time ? '<span>⏰ ' + item.time + '</span>' : '') +
-        (item.reason ? '<span style="color:var(--text3);">· ' + item.reason + '</span>' : '') +
+        (item.reason ? '<span>· ' + item.reason + '</span>' : '') +
       '</div>';
     list.appendChild(card);
   });
@@ -1764,6 +1792,7 @@ function applyLiveWaterData(d) {
       badge.textContent = emergCount;
       badge.style.display = emergCount > 0 ? '' : 'none';
     }
+    buildWaterCityTabs(d.interruptions);
     initWater();
   }
 }
