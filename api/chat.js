@@ -788,6 +788,13 @@ async function fetchMeralcoPages() {
     if (!alertRes.ok) throw new Error(`Alert page HTTP ${alertRes.status}`);
     if (!maintRes.ok) throw new Error(`Maint page HTTP ${maintRes.status}`);
     const [alertHtml, maintHtml] = await Promise.all([alertRes.text(), maintRes.text()]);
+    // Sanity-check: if neither page contains known structural markers, the layout
+    // has likely changed and silent empty results would give a false "all clear".
+    const alertParseable = alertHtml.includes('mld-report-wrapper') || alertHtml.includes('faq-item') || alertHtml.includes('yellow') || alertHtml.includes('red alert');
+    const maintParseable = maintHtml.includes('views-col') || maintHtml.includes('field-content') || maintHtml.includes('maintenance');
+    if (!alertParseable && !maintParseable) {
+      throw new Error('Meralco page structure unrecognised — falling back to AI');
+    }
     return {
       interruptions: [
         ...parseMeralcoAlertInterruptions(alertHtml),
