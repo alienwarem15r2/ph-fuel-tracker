@@ -337,7 +337,6 @@ async function scrapeGasWatch(region) {
         prices.petron.ron95 = unleaded + 3.10;
         prices.petron.ron100 = unleaded + 13.15;
         prices.petron.diesel_prem = diesel + 4.25;
-        prices.petron.kerosene = diesel - 0.75;
         foundCount++;
       }
       else if (rawBrand.includes('shell') && diesel > 50) {
@@ -346,7 +345,13 @@ async function scrapeGasWatch(region) {
         prices.shell.ron95 = unleaded + 3.10;
         prices.shell.ron97 = unleaded + 6.64;
         prices.shell.diesel_prem = diesel + 4.70;
-        prices.shell.kerosene = diesel - 1.79;
+        foundCount++;
+      }
+      // Kerosene: try to read directly from its own table row
+      else if (rawBrand.includes('kerosene') && val2 > 50) {
+        const kp = Math.min(val2, val3 || val2);
+        prices.petron.kerosene = kp;
+        prices.shell.kerosene  = kp + 1.04;
         foundCount++;
       }
       else if (rawBrand.includes('unioil') && diesel > 50) {
@@ -370,7 +375,6 @@ async function scrapeGasWatch(region) {
         prices.petron.ron95 = vals[1] + 3.10;
         prices.petron.ron100 = vals[1] + 13.15;
         prices.petron.diesel_prem = vals[0] + 4.25;
-        prices.petron.kerosene = vals[0] - 0.75;
       }
       if (shellBlock) {
         const vals = [parseFloat(shellBlock[1]), parseFloat(shellBlock[2])].sort((a,b) => a-b);
@@ -379,7 +383,15 @@ async function scrapeGasWatch(region) {
         prices.shell.ron95 = vals[1] + 3.10;
         prices.shell.ron97 = vals[1] + 6.64;
         prices.shell.diesel_prem = vals[0] + 4.70;
-        prices.shell.kerosene = vals[0] - 1.79;
+      }
+      // Try to scrape actual kerosene price from HTML
+      const keroBlock = html.match(/kerosene[\s\S]{0,200}?(\d{2,3}\.\d{2})/i);
+      if (keroBlock) {
+        const kp = parseFloat(keroBlock[1]);
+        if (kp > 50 && kp < 150) {
+          prices.petron.kerosene = kp;
+          prices.shell.kerosene  = kp + 1.04;
+        }
       }
       if (unioilBlock) {
         const vals = [parseFloat(unioilBlock[1]), parseFloat(unioilBlock[2])].sort((a,b) => a-b);
@@ -419,24 +431,95 @@ async function scrapeGasWatch(region) {
   }
 }
 
+/* ── DOE OIL MONITOR SCRAPER (primary adjustment source) ── */
+async function scrapeDOEOilMonitor() {
+  const url = "https://legacy.doe.gov.ph/oil-monitor";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html" },
+      redirect: "follow"
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const html = await res.text();
+
+    // Strip scripts/styles and collapse whitespace for text pattern matching
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    const dateMatch = text.match(/Oil Monitor as of (\d+\s+\w+\s+\d{4})/i);
+
+    // Parses text like "Kerosene: P13.30/liter decrease" or "price decrease of P9.57/liter for diesel"
+    function parseAdj(keyword) {
+      // Pattern A: "Keyword: P13.30/liter decrease"
+      let m = text.match(new RegExp(keyword + '[^.\\d]{0,30}P([\\d.]+)[^.\\d]{0,30}(increase|decrease|rollback|reduction)', 'i'));
+      if (m) return (/(decrease|rollback|reduction)/i.test(m[2]) ? '-' : '+') + m[1];
+      // Pattern B: "price decrease of P13.30/liter for keyword"
+      m = text.match(new RegExp('(increase|decrease|rollback)[^.\\d]{0,40}P([\\d.]+)\\/liter[^.]{0,60}' + keyword, 'i'));
+      if (m) return (/(decrease|rollback)/i.test(m[1]) ? '-' : '+') + m[2];
+      // Pattern C: "keyword ... decreased/increased ... P13.30"
+      m = text.match(new RegExp(keyword + '[^.]{0,120}(increased|decreased|rollback)[^.\\d]{0,15}P([\\d.]+)', 'i'));
+      if (m) return (/(decreased|rollback)/i.test(m[1]) ? '-' : '+') + m[2];
+      return null;
+    }
+
+    const adj = {
+      gasoline_ron91_95: parseAdj('gasoline') || parseAdj('unleaded'),
+      diesel_std:        parseAdj('diesel'),
+      kerosene:          parseAdj('kerosene'),
+      lpg_per_kg:        parseAdj('lpg'),
+      note: dateMatch ? `DOE Oil Monitor as of ${dateMatch[1]}` : "DOE Oil Monitor (doe.gov.ph)"
+    };
+
+    if (!adj.gasoline_ron91_95 && !adj.diesel_std && !adj.kerosene) {
+      throw new Error("No adjustment data parsed from DOE page");
+    }
+    console.log("[doe] adjustment scraped:", adj);
+    return adj;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
 /* ── DOE ADJUSTMENT AUGMENT ── */
 async function fetchDOEAdjustment(today, geminiKey, groqKey) {
+  // 1. DOE oil monitor — authoritative source, structured text
+  try {
+    const doeAdj = await scrapeDOEOilMonitor();
+    if (doeAdj && (doeAdj.kerosene || doeAdj.diesel_std)) return doeAdj;
+  } catch (e) {
+    console.warn("[adj] DOE scraper failed:", e.message);
+  }
+
+  // 2. AI fallback — both sources in parallel, merge best non-null values
   const prompt = buildAdjustmentPrompt(today);
-  if (geminiKey) {
-    try {
-      const raw = await geminiGenerate(geminiKey, prompt);
-      const json = extractJSON(raw);
-      if (!json.error && json.doe_adjustment) return json.doe_adjustment;
-    } catch (e) { console.warn("[adj] Gemini failed:", e.message); }
+  const results = await Promise.allSettled([
+    geminiKey ? geminiGenerate(geminiKey, prompt).then(r => extractJSON(r)) : Promise.resolve(null),
+    groqKey   ? groqSearch(prompt).then(r => extractJSON(r))               : Promise.resolve(null)
+  ]);
+  const merged = { gasoline_ron91_95: null, diesel_std: null, kerosene: null, lpg_per_kg: null, note: null };
+  let anyFound = false;
+  for (const r of results) {
+    if (r.status !== 'fulfilled' || !r.value || r.value.error) continue;
+    const adj = r.value.doe_adjustment || r.value;
+    if (!adj || typeof adj !== 'object') continue;
+    if (adj.gasoline_ron91_95 && !merged.gasoline_ron91_95) merged.gasoline_ron91_95 = String(adj.gasoline_ron91_95);
+    if (adj.diesel_std        && !merged.diesel_std)        merged.diesel_std        = String(adj.diesel_std);
+    if (adj.kerosene          && !merged.kerosene)          merged.kerosene          = String(adj.kerosene);
+    if (adj.lpg_per_kg        && !merged.lpg_per_kg)        merged.lpg_per_kg        = String(adj.lpg_per_kg);
+    if (adj.note              && !merged.note)              merged.note              = adj.note;
+    anyFound = true;
   }
-  if (groqKey) {
-    try {
-      const raw = await groqSearch(prompt);
-      const json = extractJSON(raw);
-      if (!json.error && json.doe_adjustment) return json.doe_adjustment;
-    } catch (e) { console.warn("[adj] Groq failed:", e.message); }
-  }
-  return null;
+  console.log("[adj] AI merged:", merged);
+  return anyFound ? merged : null;
 }
 
 /* ── PROMPT BUILDERS ── */
