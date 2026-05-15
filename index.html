@@ -1321,7 +1321,11 @@ function renderInterruptions(interruptions) {
     var regionOk = activePowerRegion === 'all' ||
       (activePowerRegion === 'pampanga' && (item.province||item.city).toLowerCase().indexOf('pampanga') !== -1) ||
       (activePowerRegion === 'ncr' && (item.province||item.city).toLowerCase().indexOf('pampanga') === -1);
-    var cityOk = activePowerCity === 'All' || tabKey === activePowerCity;
+    var activeLC = activePowerCity.toLowerCase();
+    var cityOk = activePowerCity === 'All' ||
+      tabKey === activePowerCity ||
+      (item.city && item.city.toLowerCase() === activeLC) ||
+      (item.province && item.province.toLowerCase() === activeLC);
     if (!regionOk || !cityOk) return false;
     if (powerSearchQuery) {
       var hay = [item.city, item.province||'', item.barangay||'', (item.windows||[]).join(' '), item.date||'', item.reason||''].join(' ').toLowerCase();
