@@ -829,54 +829,69 @@ function parseMeralcoAlertInterruptions(html) {
   const wSection = html.substring(wStart, wStart + 150000);
 
   // Split by <h1> to get one section per time slot.
-  // Structure: <h1>time</h1><div class="faq-accordion"><div class="faq-item">
-  //   <div class="faq-header"><h2>PROVINCE</h2>...</div>
-  //   <div class="faq-body"><h3>CITY</h3><h3>CITY</h3>...</div>
-  // </div>...
+  // Structure: <h1>time</h1><div class="faq-accordion">
+  //   <div class="faq-item"><div class="faq-header"><h2>PROVINCE</h2></div>
+  //     <div class="faq-body"><h3>CITY</h3><p class="barangay-item">bgy</p>...
   const sections = wSection.split(/<h1[^>]*>/i).slice(1);
 
-  const interruptions = [];
+  // Group by "PROVINCE::CITY" — collect all time windows + all barangays per city
+  const cityMap = new Map();
+
   for (const section of sections.slice(0, 10)) {
     const slotM = section.match(/^([\s\S]*?)<\/h1>/i);
     if (!slotM) continue;
     const timeSlot = slotM[1].replace(/<[^>]+>/g, '').trim();
     if (!/between/i.test(timeSlot)) continue;
 
-    // Split section by <div class="faq-item"> to get one block per province
     const itemBlocks = section.split(/<div[^>]*class="[^"]*faq-item[^"]*"[^>]*>/i).slice(1);
 
     for (const block of itemBlocks) {
-      // Province name from first <h2> (inside faq-header)
       const provM = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
       if (!provM) continue;
       const province = provM[1].replace(/<[^>]+>/g, '').trim();
       if (!province) continue;
 
-      // City names from <h3> tags inside faq-body
-      const cities = [];
-      for (const m of block.matchAll(/<h3[^>]*>([\s\S]*?)<\/h3>/gi)) {
-        const city = m[1].replace(/<[^>]+>/g, '').trim();
-        if (city && city.length < 60) cities.push(city);
-      }
+      // Locate faq-body, then split by <h3> to get city→barangay groups
+      const bodyIdx = block.indexOf('faq-body');
+      const bodySection = bodyIdx !== -1 ? block.substring(bodyIdx) : block;
+      const cityParts = bodySection.split(/<h3[^>]*>/i).slice(1);
 
-      interruptions.push({
-        city: province,
-        barangay: cities.length > 0 ? cities.join(', ') : 'See Meralco advisory',
-        street: null,
-        date,
-        time: timeSlot,
-        reason: alertLabel,
-        type: 'emergency'
-      });
+      for (const part of cityParts) {
+        const cityM = part.match(/^([\s\S]*?)<\/h3>/i);
+        if (!cityM) continue;
+        const city = cityM[1].replace(/<[^>]+>/g, '').trim();
+        if (!city || city.length > 60) continue;
+
+        const key = province + '::' + city;
+        if (!cityMap.has(key)) cityMap.set(key, { province, city, barangays: new Set(), windows: [] });
+        const entry = cityMap.get(key);
+        if (!entry.windows.includes(timeSlot)) entry.windows.push(timeSlot);
+
+        for (const m of part.matchAll(/<p[^>]*class="[^"]*barangay-item[^"]*"[^>]*>([\s\S]*?)<\/p>/gi)) {
+          const bay = m[1].replace(/<[^>]+>/g, '').replace(/^\d+\.\s*/, '').trim();
+          if (bay && bay.length < 80) entry.barangays.add(bay);
+        }
+      }
     }
   }
 
-  if (interruptions.length === 0) {
-    return [{ city: 'Metro Manila Area', barangay: 'Multiple provinces — see Meralco advisory',
-              street: null, date, time: 'Multiple windows', reason: alertLabel, type: 'emergency' }];
+  if (cityMap.size === 0) {
+    return [{ city: 'Metro Manila Area', province: null, barangay: 'See Meralco advisory',
+              windows: [], date, time: 'Multiple windows', reason: alertLabel, type: 'emergency' }];
   }
 
-  return interruptions;
+  return [...cityMap.values()].map(function(entry) {
+    return {
+      city: entry.city,
+      province: entry.province,
+      barangay: [...entry.barangays].join(', ') || 'See Meralco advisory',
+      windows: entry.windows,
+      date,
+      time: entry.windows.length + ' window' + (entry.windows.length !== 1 ? 's' : ''),
+      reason: alertLabel,
+      type: 'emergency'
+    };
+  });
 }
 
 function parseMeralcoMaintenanceInterruptions(html) {
