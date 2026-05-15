@@ -160,14 +160,13 @@ async function handleFuel(res, region) {
 
   if (gwData && gwData.prices && gwData.prices.petron && gwData.prices.petron.ron91 > 50) {
     const baseAdj = gwData.adjustment || { gasoline_ron91_95: null, diesel_std: null, kerosene: null, lpg_per_kg: null, note: "GasWatch PH community + DOE data" };
-    // Merge AI-sourced adjustment values on top of scraped (AI is more accurate for amounts)
+    // AI adjData only fills in fields that GasWatch didn't provide — never overrides
     if (adjData) {
-      if (adjData.gasoline_ron91_95) baseAdj.gasoline_ron91_95 = adjData.gasoline_ron91_95;
-      if (adjData.diesel_std)        baseAdj.diesel_std        = adjData.diesel_std;
-      if (adjData.kerosene)          baseAdj.kerosene          = adjData.kerosene;
-      if (adjData.lpg_per_kg)        baseAdj.lpg_per_kg        = adjData.lpg_per_kg;
-      if (adjData.note)              baseAdj.note              = adjData.note;
-      console.log("[fuel] DOE adjustment augmented:", adjData);
+      if (adjData.gasoline_ron91_95 && !baseAdj.gasoline_ron91_95) baseAdj.gasoline_ron91_95 = adjData.gasoline_ron91_95;
+      if (adjData.diesel_std        && !baseAdj.diesel_std)        baseAdj.diesel_std        = adjData.diesel_std;
+      if (adjData.kerosene          && !baseAdj.kerosene)          baseAdj.kerosene          = adjData.kerosene;
+      if (adjData.lpg_per_kg        && !baseAdj.lpg_per_kg)        baseAdj.lpg_per_kg        = adjData.lpg_per_kg;
+      console.log("[fuel] adjData used to fill nulls:", adjData);
     }
     result = {
       effective_date: today,
