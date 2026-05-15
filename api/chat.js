@@ -5,7 +5,7 @@ const GROQ_BASE = "https://api.groq.com/openai/v1";
 const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-2.0-flash-lite";
 
 const GASWATCH_URLS = {
   metro_manila: "https://gaswatchph.com/",
