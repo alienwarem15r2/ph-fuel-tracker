@@ -867,7 +867,6 @@ function applyLivePowerData(d) {
       badge.style.background = gs.level === 'red' ? '#fdeaea' : '#fef3dc';
       badge.style.color = gs.level === 'red' ? '#b83232' : '#8a5a00';
     }
-  }
 
   if (d.last_updated) {
     document.getElementById('power-updated-label').textContent = 'Meralco · Updated ' + d.last_updated;
@@ -878,7 +877,7 @@ function applyLivePowerData(d) {
     window._liveInterruptions = d.interruptions;
     initPower();
   }
-
+}
 
 /* ══════════════════════════════════════════════════════════════
    TAB SWITCHING
