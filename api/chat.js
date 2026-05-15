@@ -17,7 +17,7 @@ const GASWATCH_URLS = {
 
 // ── 15-min server cache ──
 const CACHE_TTL = 15 * 60 * 1000;
-const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 } };
+const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 }, water: { data: null, ts: 0 } };
 
 function getCache(key) {
   const e = apiCache[key];
@@ -50,6 +50,7 @@ export default async function handler(req, res) {
     if (action === "debug") return await handleDebug(res);
     if (action === "fuel") return await handleFuel(res, region);
     if (action === "power") return await handlePower(res);
+    if (action === "water") return await handleWater(res);
     return await handleChat(system, messages, res);
   } catch (err) {
     console.error("[chat.js] unhandled:", err);
@@ -391,7 +392,71 @@ async function handlePower(res) {
   return res.status(200).json(result);
 }
 
-/* ── GASWATCH PH DATA.JS SCRAPER ── */
+
+
+/* ── WATER SUPPLY ── */
+async function handleWater(res) {
+  const cached = getCache('water');
+  if (cached) {
+    return res.status(200).json({ ...cached, _meta: { source: 'cache', cached_at: new Date(apiCache.water.ts).toISOString() } });
+  }
+
+  const today = new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric' });
+  const geminiKey = process.env.GEMINI_API_KEY;
+  let result = null;
+  let source = 'unavailable';
+
+  if (geminiKey) {
+    try {
+      const raw = await geminiGenerate(geminiKey, buildWaterPrompt(today));
+      const json = extractJSON(raw);
+      if (!json.error && json.dam_status) {
+        result = json;
+        source = 'gemini';
+        console.log('[water] Gemini OK, dam level:', json.dam_status.level);
+      }
+    } catch (e) {
+      console.warn('[water] Gemini failed:', e.message);
+    }
+  }
+
+  if (!result) {
+    result = {
+      dam_status: {
+        level: null, nhwl: 212, mddl: 180, trend: 'unknown',
+        title: 'Angat Dam — Level Unavailable',
+        subtitle: 'Live data temporarily unavailable. Check MWSS for current levels.',
+        color: '#6b6a65', bg: '#f0efe9', border: 'rgba(107,106,101,.2)',
+        as_of: today
+      },
+      interruptions: [],
+      last_updated: today,
+      sources: ['unavailable']
+    };
+    source = 'unavailable';
+  }
+
+  result._meta = { source, cached_at: new Date().toISOString() };
+  setCache('water', result);
+  res.setHeader('Cache-Control', 'public, max-age=900');
+  return res.status(200).json(result);
+}
+
+function buildWaterPrompt(today) {
+  return `Today is ${today} Philippines. Search for these THREE things and return real current data:
+
+1. Angat Dam water level — search "MWSS Angat Dam water level ${today}" OR "site:mwss.gov.ph angat dam" for today's elevation in meters. Normal High Water Level (NHWL) is 212m, Minimum Drawdown Level (MDDL) is 180m. Note if level is rising or falling vs yesterday.
+
+2. Maynilad Water advisories — search "site:mayniladwater.com.ph service interruption" OR "Maynilad water interruption advisory ${today}" for current service interruption notices. List affected city and barangay.
+
+3. Manila Water advisories — search "site:manilawater.com advisory" OR "Manila Water service interruption ${today}" for current notices. List affected city and barangay.
+
+Return ONLY compact JSON, no markdown:
+{"dam_status":{"level":207.5,"nhwl":212,"mddl":180,"trend":"falling","title":"Angat Dam — 207.5m","subtitle":"Near normal level. Adequate supply maintained.","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","as_of":"${today}"},"interruptions":[{"utility":"Maynilad","area":"Quezon City","barangay":"Fairview, Commonwealth","date":"${today}","time":"10PM–6AM","reason":"Pipe rehabilitation","type":"scheduled"},{"utility":"Manila Water","area":"Pasig City","barangay":"Kapitolyo","date":"${today}","time":"8AM–5PM","reason":"Maintenance works","type":"scheduled"}],"last_updated":"${today}","sources":["mwss.gov.ph","mayniladwater.com.ph","manilawater.com"]}
+
+Dam level color rules: level>=208 color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)" | level>=200 color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" | level>=190 color="#b85a00",bg="#fef0e0",border="rgba(184,90,0,.2)" | level<190 color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" | unknown color="#6b6a65",bg="#f0efe9",border="rgba(107,106,101,.2)".
+For interruptions: utility must be exactly "Maynilad" or "Manila Water". type must be "scheduled" or "emergency". Include barangay names when available. If none found, return empty array.`;
+}/* ── GASWATCH PH DATA.JS SCRAPER ── */
 
 // Extract a JS object/array block starting at `startIdx` in `src` using brace counting.
 function extractBlock(src, startIdx) {
