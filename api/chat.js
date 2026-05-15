@@ -829,39 +829,51 @@ function parseMeralcoAlertInterruptions(html) {
   const wSection = html.substring(wStart, wStart + 150000);
 
   // Split by <h1> to get one section per time slot.
-  // Structure: <h1>time</h1><div class="faq-accordion"><div class="faq-item"><div class="faq-header"><h2>PROVINCE</h2>...
-  const sections = wSection.split(/<h1[^>]*>/i).slice(1); // skip content before first h1
+  // Structure: <h1>time</h1><div class="faq-accordion"><div class="faq-item">
+  //   <div class="faq-header"><h2>PROVINCE</h2>...</div>
+  //   <div class="faq-body"><h3>CITY</h3><h3>CITY</h3>...</div>
+  // </div>...
+  const sections = wSection.split(/<h1[^>]*>/i).slice(1);
 
   const interruptions = [];
   for (const section of sections.slice(0, 10)) {
-    // Time slot text is before </h1>
     const slotM = section.match(/^([\s\S]*?)<\/h1>/i);
     if (!slotM) continue;
     const timeSlot = slotM[1].replace(/<[^>]+>/g, '').trim();
     if (!/between/i.test(timeSlot)) continue;
 
-    // Province/area names are in <h2> inside each faq-header within this section
-    const provinces = [];
-    for (const m of section.matchAll(/<div[^>]*class="[^"]*faq-header[^"]*"[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>/gi)) {
-      const name = m[1].replace(/<[^>]+>/g, '').trim();
-      if (name) provinces.push(name);
-    }
+    // Split section by <div class="faq-item"> to get one block per province
+    const itemBlocks = section.split(/<div[^>]*class="[^"]*faq-item[^"]*"[^>]*>/i).slice(1);
 
-    interruptions.push({
-      city: 'Metro Manila Area',
-      barangay: provinces.length > 0 ? provinces.join(', ') : 'See Meralco advisory',
-      street: null,
-      date,
-      time: timeSlot,
-      reason: alertLabel,
-      type: 'emergency'
-    });
+    for (const block of itemBlocks) {
+      // Province name from first <h2> (inside faq-header)
+      const provM = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+      if (!provM) continue;
+      const province = provM[1].replace(/<[^>]+>/g, '').trim();
+      if (!province) continue;
+
+      // City names from <h3> tags inside faq-body
+      const cities = [];
+      for (const m of block.matchAll(/<h3[^>]*>([\s\S]*?)<\/h3>/gi)) {
+        const city = m[1].replace(/<[^>]+>/g, '').trim();
+        if (city && city.length < 60) cities.push(city);
+      }
+
+      interruptions.push({
+        city: province,
+        barangay: cities.length > 0 ? cities.join(', ') : 'See Meralco advisory',
+        street: null,
+        date,
+        time: timeSlot,
+        reason: alertLabel,
+        type: 'emergency'
+      });
+    }
   }
 
-  // Fallback if structure not matched
   if (interruptions.length === 0) {
-    return [{ city: 'Metro Manila Area', barangay: 'Multiple provinces — see Meralco advisory', street: null,
-              date, time: 'Multiple windows', reason: alertLabel, type: 'emergency' }];
+    return [{ city: 'Metro Manila Area', barangay: 'Multiple provinces — see Meralco advisory',
+              street: null, date, time: 'Multiple windows', reason: alertLabel, type: 'emergency' }];
   }
 
   return interruptions;
