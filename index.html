@@ -2089,7 +2089,8 @@ document.addEventListener('DOMContentLoaded', function() {
   buildCityPriceGrid();
   initPower();
   initWater();
-  fetchLiveData(); // triggers live data load and updates UI when ready
+  fetchLiveData();
+  setInterval(fetchLiveData, 15 * 60 * 1000); // auto-refresh every 15 minutes
 });
 </script>
 </body>
