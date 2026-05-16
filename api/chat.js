@@ -807,9 +807,9 @@ Use exact dates and times from the table. type="emergency" for Emergency Works t
 }
 
 function buildDamPrompt(today) {
-  return `Today is ${today} Philippines. Search MWSS (mwss.gov.ph) or news for today's Angat Dam water elevation in meters. NHWL=212m, MDDL=180m. Return ONLY compact JSON, no markdown:
+  return `Today is ${today} Philippines. Search "MWSS Angat Dam water level ${today}" or "Angat Dam elevation ${today}" or site:mwss.gov.ph to find today's Angat Dam water elevation in meters. NHWL=212m, MDDL=180m. Return ONLY compact JSON, no markdown:
 {"dam_status":{"level":ACTUAL_METERS,"nhwl":212,"mddl":180,"trend":"rising|falling|stable","title":"Angat Dam — XXXm","subtitle":"STATUS_TEXT","color":"COLOR","bg":"BG","border":"BORDER","as_of":"${today}"}}
-Color rules: level>=208→"#1a7a52","#e6f5ed","rgba(26,122,82,.2)" | level>=200→"#8a5a00","#fef3dc","rgba(138,90,0,.2)" | level>=190→"#b85a00","#fef0e0","rgba(184,90,0,.2)" | level<190→"#b83232","#fdeaea","rgba(184,50,50,.2)" | unknown→"#6b6a65","#f0efe9","rgba(107,106,101,.2)". Use null for level if not found after searching.`;
+Color rules: level>=208→"#1a7a52","#e6f5ed","rgba(26,122,82,.2)" | level>=200→"#8a5a00","#fef3dc","rgba(138,90,0,.2)" | level>=190→"#b85a00","#fef0e0","rgba(184,90,0,.2)" | level<190→"#b83232","#fdeaea","rgba(184,50,50,.2)" | unknown→"#6b6a65","#f0efe9","rgba(107,106,101,.2)". Use null for level only if truly not found after searching.`;
 }
 
 /* ── GASWATCH PH DATA.JS SCRAPER ── */
