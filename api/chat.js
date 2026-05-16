@@ -809,6 +809,7 @@ function parsePAGASADamTable(html) {
       const name = cells[0];
       if (!name || name.length > 40 || !/[a-zA-Z]/.test(name)) continue;
       if (/reservoir|water.?level|observation|nhwl|dam.?name/i.test(name)) continue;
+      if (/^\d{1,2}:\d{2}\s*(am|pm)/i.test(name)) continue;
       const rwl = pf(cells[2]), nhwl = pf(cells[4]);
       if (!rwl || !nhwl) continue;
       const dev24h = pf(cells[3]), devNHWL = pf(cells[5]);
@@ -1248,16 +1249,13 @@ async function fetchNextWeekForecast(today, geminiKey, groqKey) {
     try {
       const raw = await groqSearch(prompt);
       const json = extractJSON(raw);
-      console.log("[forecast] Groq raw json:", JSON.stringify(json).substring(0, 300));
       if (!json.error && json.next_week_forecast) {
         const f = json.next_week_forecast;
         if (f.gasoline || f.diesel || f.kerosene || f.note) {
           console.log("[forecast] Groq OK");
           return f;
         }
-        console.warn("[forecast] Groq returned forecast but all fields null:", JSON.stringify(f));
-      } else {
-        console.warn("[forecast] Groq response missing next_week_forecast key");
+        console.log("[forecast] Groq: no forecast data yet (DOE not announced)");
       }
     } catch (e) {
       console.warn("[forecast] Groq failed:", e.message);
