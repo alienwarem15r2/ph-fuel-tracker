@@ -455,10 +455,14 @@ async function handlePower(res) {
   else {
     console.warn("[power] Meralco direct failed:", meralcoResult.reason?.message, "— trying Firecrawl");
     try {
-      const [alertHtml, maintHtml] = await Promise.all([
+      const maintBase = 'https://company.meralco.com.ph/news-and-advisories/maintenance-schedule';
+      const [alertHtml, mh0, mh1, mh2] = await Promise.all([
         firecrawlScrape('https://company.meralco.com.ph/news-and-advisories/yellow-and-red-alert-locations', 'html'),
-        firecrawlScrape('https://company.meralco.com.ph/news-and-advisories/maintenance-schedule', 'html')
+        firecrawlScrape(maintBase, 'html'),
+        firecrawlScrape(maintBase + '?page=1', 'html'),
+        firecrawlScrape(maintBase + '?page=2', 'html'),
       ]);
+      const maintHtml = [mh0, mh1, mh2].join('\n');
       meralcoData = {
         interruptions: [
           ...parseMeralcoAlertInterruptions(alertHtml),
@@ -1249,20 +1253,30 @@ const MERALCO_BROWSER_HEADERS = {
 
 async function fetchMeralcoPages() {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const [alertRes, maintRes] = await Promise.all([
+    const maintBase = 'https://company.meralco.com.ph/news-and-advisories/maintenance-schedule';
+    const [alertRes, m0, m1, m2, m3, m4] = await Promise.all([
       fetch('https://company.meralco.com.ph/news-and-advisories/yellow-and-red-alert-locations',
         { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS }),
-      fetch('https://company.meralco.com.ph/news-and-advisories/maintenance-schedule',
-        { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS })
+      fetch(maintBase,            { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS }),
+      fetch(maintBase + '?page=1', { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS }),
+      fetch(maintBase + '?page=2', { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS }),
+      fetch(maintBase + '?page=3', { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS }),
+      fetch(maintBase + '?page=4', { signal: controller.signal, headers: MERALCO_BROWSER_HEADERS }),
     ]);
     clearTimeout(timeout);
     if (!alertRes.ok) throw new Error(`Alert page HTTP ${alertRes.status}`);
-    if (!maintRes.ok) throw new Error(`Maint page HTTP ${maintRes.status}`);
-    const [alertHtml, maintHtml] = await Promise.all([alertRes.text(), maintRes.text()]);
-    // Sanity-check: if neither page contains known structural markers, the layout
-    // has likely changed and silent empty results would give a false "all clear".
+    if (!m0.ok) throw new Error(`Maint page HTTP ${m0.status}`);
+    const [alertHtml, mh0, mh1, mh2, mh3, mh4] = await Promise.all([
+      alertRes.text(),
+      m0.text(),
+      m1.ok ? m1.text() : Promise.resolve(''),
+      m2.ok ? m2.text() : Promise.resolve(''),
+      m3.ok ? m3.text() : Promise.resolve(''),
+      m4.ok ? m4.text() : Promise.resolve(''),
+    ]);
+    const maintHtml = [mh0, mh1, mh2, mh3, mh4].join('\n');
     const alertParseable = alertHtml.includes('mld-report-wrapper') || alertHtml.includes('faq-item') || alertHtml.includes('yellow') || alertHtml.includes('red alert');
     const maintParseable = maintHtml.includes('views-col') || maintHtml.includes('field-content') || maintHtml.includes('maintenance');
     if (!alertParseable && !maintParseable) {
