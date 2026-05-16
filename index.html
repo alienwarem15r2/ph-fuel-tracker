@@ -457,9 +457,9 @@
         <div id="pso-grid" style="display:none;">
           <div style="display:grid;grid-template-columns:auto repeat(3,1fr);gap:3px 8px;font-size:12px;align-items:center;">
             <div></div>
-            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">LUZON</div>
-            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">VISAYAS</div>
-            <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">MINDANAO</div>
+            <div id="pso-header-luz" style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">LUZON</div>
+            <div id="pso-header-vis" style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">VISAYAS</div>
+            <div id="pso-header-min" style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);letter-spacing:.4px;padding-bottom:5px;border-bottom:1px solid var(--border);">MINDANAO</div>
             <div style="font-size:11px;color:var(--text3);padding:3px 0;">Capacity (MW)</div>
             <div style="text-align:center;" id="pso-luz-cap">—</div>
             <div style="text-align:center;" id="pso-vis-cap">—</div>
@@ -1178,8 +1178,23 @@ function applyLivePowerData(d) {
     marginEl('pso-vis-mar', gs.pso.visayas  && gs.pso.visayas.margin);
     marginEl('pso-min-mar', gs.pso.mindanao && gs.pso.mindanao.margin);
 
+    // Per-grid alert badge in column headers
+    var gridBadge = function(headerId, margin) {
+      var el = document.getElementById(headerId);
+      if (!el || margin == null) return;
+      var label = margin < 0 ? 'RED' : margin < 600 ? 'YELLOW' : null;
+      var color = margin < 0 ? '#b83232' : '#8a5a00';
+      var name = headerId.replace('pso-header-', '').toUpperCase();
+      el.innerHTML = label
+        ? name + '<br><span style="font-size:9px;font-weight:700;color:' + color + ';letter-spacing:.3px;">' + label + ' ALERT</span>'
+        : name;
+    };
+    gridBadge('pso-header-luz', gs.pso.luzon    && gs.pso.luzon.margin);
+    gridBadge('pso-header-vis', gs.pso.visayas  && gs.pso.visayas.margin);
+    gridBadge('pso-header-min', gs.pso.mindanao && gs.pso.mindanao.margin);
+
     var asofEl = document.getElementById('pso-as-of');
-    if (asofEl && gs.pso.as_of) asofEl.textContent = 'as of ' + gs.pso.as_of + ' · MW · Demand from WESM Day Ahead Projection';
+    if (asofEl && gs.pso.as_of) asofEl.textContent = 'NGCP Day Ahead Projection · Published ' + gs.pso.as_of + ' · MW';
 
     // Hide subtitle when PSO table is shown (table is self-explanatory)
     var subEl = document.getElementById('grid-alert-sub');
