@@ -1938,17 +1938,7 @@ function applyLiveWaterLevelData(d) {
             '</div>' +
           '</div>' +
           gaugeHtml +
-          (s.wl1h != null ? (function(){
-  var priorLabel = '1h prior';
-  if (s.time) {
-    var t = new Date(s.time.replace(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/, '$1-$2-$3T$4:$5') || s.time);
-    if (!isNaN(t)) {
-      t.setHours(t.getHours() - 1);
-      priorLabel = t.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true });
-    }
-  }
-  return '<div style="font-size:11px;color:var(--text3);">' + priorLabel + ': ' + s.wl1h.toFixed(2) + 'm</div>';
-})() : '') +
+          '' +
         '</div>';
       }).join('');
     }
@@ -1989,8 +1979,8 @@ function applyLiveWaterLevelData(d) {
             '<div style="height:100%;border-radius:4px;width:' + barPct + '%;background:' + barColor + ';transition:width .5s;"></div>' +
           '</div>' +
           '<div style="display:flex;gap:12px;font-size:11px;color:var(--text2);">' +
-            '<span>1h: <b>' + rf1h + 'mm</b></span>' +
-            '<span>3h: <b>' + rf3h + 'mm</b></span>' +
+            '<span>Past 1h: <b>' + rf1h + 'mm</b></span>' +
+            '<span>Past 3h: <b>' + rf3h + 'mm</b></span>' +
           '</div>' +
         '</div>';
       };
