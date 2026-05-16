@@ -1287,6 +1287,10 @@ function parseMeralcoAlertInterruptions(html) {
   // Look for "Red Alert Locations" or "Yellow Alert Locations" h3 heading specifically.
   const articleIdx = html.indexOf('node-field');
   const checkText  = articleIdx !== -1 ? html.substring(articleIdx, articleIdx + 80000) : html.substring(0, 80000);
+
+  // If system condition is explicitly Normal, no active alert regardless of page heading
+  if (/system\s+condition[:\s]+normal/i.test(checkText)) return [];
+
   // Prioritise specific heading pattern to avoid false match from page title "Red & Yellow Alert"
   const isRed    = /red\s+alert\s+locations/i.test(checkText);
   const isYellow = !isRed && /yellow\s+alert\s+locations/i.test(checkText);
