@@ -1381,38 +1381,37 @@ function parseMeralcoAlertInterruptions(html) {
 function parseMeralcoMaintenanceInterruptions(html) {
   html = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
 
-  // Titles: <h3 class="field-content..."><a ...>DATE - City (Area)</a>
-  const titleRx    = /<h3[^>]*class="[^"]*field-content[^"]*"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/gi;
-  // Cities: views-field-field-service-maintenance-loc ... field-content > text
-  const cityRx     = /views-field-field-service-maintenance-loc[\s\S]{0,400}?class="field-content"[^>]*>\s*([^<\n]{1,60}?)\s*<\/div>/gi;
-  // First time slot: first STRONG inside views-field-body
-  const timeRx     = /views-field-body[\s\S]{0,800}?<strong>(BETWEEN[\s\S]*?)<\/strong>/gi;
-
-  const titles = [...html.matchAll(titleRx)];
-  const cities = [...html.matchAll(cityRx)];
-  const times  = [...html.matchAll(timeRx)];
-
+  // Split at each views-row so each chunk is one self-contained maintenance item
+  const blocks = html.split(/<div[^>]*class="[^"]*views-row[^"]*"[^>]*>/i).slice(1);
   const interruptions = [];
-  for (let i = 0; i < Math.min(titles.length, 8); i++) {
-    const full   = titles[i][1].trim();
-    const parts  = full.match(/^(.+?,\s*\d{4})\s*-\s*(.+)$/);
-    const date   = parts ? parts[1].trim() : full;
+
+  for (const block of blocks) {
+    if (interruptions.length >= 15) break;
+
+    // Title: DATE - City (Area)
+    const titleM = block.match(/<h3[^>]*class="[^"]*field-content[^"]*"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
+    if (!titleM) continue;
+    const full    = titleM[1].trim();
+    const parts   = full.match(/^(.+?,\s*\d{4})\s*-\s*(.+)$/);
+    const date    = parts ? parts[1].trim() : full;
     const locFull = parts ? parts[2].trim() : full;
-    const city   = (cities[i] ? cities[i][1].trim() : null) || locFull.split('(')[0].trim();
-    const bgyM   = locFull.match(/\(([^)]+)\)/);
-    const barangay = bgyM ? bgyM[1] : locFull;
-    const timeRaw = times[i] ? times[i][1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : null;
-    // Keep only the time window part (before the dash/circuit info)
-    const timeSlot  = timeRaw ? timeRaw.replace(/\s*[–\-]\s*PORTIONS?.*/i, '').trim().substring(0, 80) : 'See schedule';
+
+    // City from location field (fall back to title)
+    const cityM = block.match(/views-field-field-service-maintenance-loc[\s\S]{0,600}?class="field-content"[^>]*>\s*([^<\n]{1,80}?)\s*<\/div>/i);
+    const city  = (cityM ? cityM[1].trim() : null) || locFull.split('(')[0].trim();
+
+    // Time window from first BETWEEN…strong inside views-field-body
+    const timeM   = block.match(/views-field-body[\s\S]{0,1500}?<strong>(BETWEEN[\s\S]*?)<\/strong>/i);
+    const timeRaw = timeM ? timeM[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : null;
+    const timeSlot = timeRaw ? timeRaw.replace(/\s*[–\-]\s*PORTIONS?.*/i, '').trim().substring(0, 100) : 'See schedule';
     const circuitM = timeRaw ? timeRaw.match(/PORTIONS?\s+OF\s+(CIRCUIT\s+\S+)/i) : null;
     const circuit  = circuitM ? circuitM[1].trim() : null;
 
+    const bgyM     = locFull.match(/\(([^)]+)\)/);
+    const barangay = bgyM ? bgyM[1] : locFull;
+
     interruptions.push({
-      city,
-      barangay,
-      street: null,
-      date,
-      time: timeSlot,
+      city, barangay, street: null, date, time: timeSlot,
       reason: 'Scheduled maintenance' + (circuit ? ` · ${circuit}` : ''),
       type: 'scheduled'
     });
