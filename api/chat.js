@@ -1246,7 +1246,7 @@ async function fetchNextWeekForecast(today, geminiKey, groqKey) {
   }
   if (groqKey) {
     try {
-      const raw = await groqGenerate(groqKey, prompt);
+      const raw = await groqSearch(prompt);
       const json = extractJSON(raw);
       if (!json.error && json.next_week_forecast) {
         const f = json.next_week_forecast;
