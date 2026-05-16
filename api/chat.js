@@ -19,7 +19,7 @@ const GASWATCH_URLS = {
 };
 
 // ── Cache TTLs (seconds) ──
-const CACHE_TTLS = { fuel: 900, power: 900, water: 7200, waterlevel: 3600 };
+const CACHE_TTLS = { fuel: 900, power: 900, water: 7200, waterlevel: 900 };
 
 // ── L1: in-memory (per-instance, fast) ──
 const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 }, water: { data: null, ts: 0 }, waterlevel: { data: null, ts: 0 } };
@@ -947,7 +947,7 @@ async function handleWaterLevel(res) {
     last_updated: today, sources };
   result._meta = { source: sources.join(', ') || 'unavailable', cached_at: new Date().toISOString() };
   await setCache('waterlevel', result);
-  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('Cache-Control', 'public, max-age=900');
   return res.status(200).json(result);
 }
 
