@@ -2,5 +2,8 @@
   "name": "ldr-fueltracker",
   "version": "1.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
+  }
 }
