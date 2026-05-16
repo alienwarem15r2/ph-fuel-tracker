@@ -551,28 +551,48 @@
   <!-- ═══════════════════════════ WATER LEVEL TAB ═══════════════════════════ -->
   <div id="panel-waterlevel" style="display:none;">
     <div style="margin-bottom:12px;">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+
+      <!-- ── Dam & Reservoir Levels ── -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <div style="width:3px;height:22px;background:#1a1917;border-radius:2px;"></div>
         <h2 style="font-size:16px;font-weight:600;margin:0;letter-spacing:-0.3px;">Dam &amp; Reservoir Levels</h2>
         <span style="font-size:11px;color:#9e9d97;margin-left:auto;" id="waterlevel-updated-label">PAGASA</span>
       </div>
-
-      <div id="waterlevel-obs-time" style="font-size:12px;color:var(--text3);margin-bottom:12px;"></div>
-
-      <!-- Dam cards -->
-      <div id="waterlevel-dam-list" style="display:flex;flex-direction:column;gap:8px;">
+      <div id="waterlevel-obs-time" style="font-size:12px;color:var(--text3);margin-bottom:10px;"></div>
+      <div id="waterlevel-dam-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">Loading dam level data…</div>
       </div>
 
-      <!-- Flood map placeholder -->
-      <div style="background:var(--surface);border:1.5px dashed var(--border-strong);border-radius:12px;padding:18px 16px;margin-top:12px;text-align:center;">
-        <div style="font-size:20px;margin-bottom:6px;">🗺</div>
-        <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:3px;">Flood Map</div>
-        <div style="font-size:12px;color:var(--text3);">Real-time flood area reporting — coming soon</div>
+      <!-- ── River Basin Flood Watch ── -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:3px;height:22px;background:#1a1917;border-radius:2px;"></div>
+        <h2 style="font-size:16px;font-weight:600;margin:0;letter-spacing:-0.3px;">River Basin Flood Watch</h2>
+      </div>
+      <div id="waterlevel-flood-watch" style="margin-bottom:18px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">Loading flood watch data…</div>
+      </div>
+
+      <!-- ── Metro Manila Water Level Stations ── -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:3px;height:22px;background:#1a1917;border-radius:2px;"></div>
+        <h2 style="font-size:16px;font-weight:600;margin:0;letter-spacing:-0.3px;">Water Level Stations</h2>
+        <span style="font-size:11px;color:#9e9d97;margin-left:auto;" id="waterlevel-ffws-time"></span>
+      </div>
+      <div id="waterlevel-stations" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">Loading station data…</div>
+      </div>
+
+      <!-- ── Rainfall Stations ── -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:3px;height:22px;background:#1a1917;border-radius:2px;"></div>
+        <h2 style="font-size:16px;font-weight:600;margin:0;letter-spacing:-0.3px;">Rainfall Monitoring</h2>
+      </div>
+      <div id="waterlevel-rainfall" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">Loading rainfall data…</div>
       </div>
 
       <p style="font-size:10px;color:#9e9d97;margin-top:10px;text-align:right;">
-        Source: PAGASA Dam Information ·
+        Source: PAGASA · Pasig-Marikina-Tullahan FFWS ·
         <a href="https://www.pagasa.dost.gov.ph/flood" target="_blank" rel="noopener" style="color:#9e9d97;">PAGASA ↗</a>
       </p>
     </div>
@@ -1765,46 +1785,150 @@ function renderWaterInterruptions(interruptions) {
 
 function applyLiveWaterLevelData(d) {
   if (!d) return;
+
+  // ── Header labels ──
   var obsEl = document.getElementById('waterlevel-obs-time');
   if (obsEl) obsEl.textContent = d.obs_time ? 'As of ' + d.obs_time : '';
   var label = document.getElementById('waterlevel-updated-label');
   if (label) label.textContent = 'PAGASA · Updated ' + (d.last_updated || '');
+  var ffwsTime = document.getElementById('waterlevel-ffws-time');
+  if (ffwsTime) ffwsTime.textContent = d.ffws_time ? 'As of ' + d.ffws_time : 'Metro Manila FFWS';
+
+  // ── Dam cards ──
   var list = document.getElementById('waterlevel-dam-list');
-  if (!list) return;
-  if (!d.dams || d.dams.length === 0) {
-    list.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No dam data available</div>';
-    return;
+  if (list) {
+    if (!d.dams || d.dams.length === 0) {
+      list.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No dam data available</div>';
+    } else {
+      list.innerHTML = d.dams.map(function(dam) {
+        var rwl  = dam.rwl  != null ? dam.rwl.toFixed(2)  : '—';
+        var nhwl = dam.nhwl != null ? dam.nhwl.toFixed(2) : '—';
+        var floor = dam.nhwl != null ? dam.nhwl - 50 : 160;
+        var pct = dam.rwl != null && dam.nhwl != null ? Math.max(0, Math.min(100, ((dam.rwl - floor) / (dam.nhwl - floor)) * 100)) : 0;
+        var d24 = dam.dev_24h != null ? (dam.dev_24h > 0 ? '+' : '') + dam.dev_24h.toFixed(2) + 'm' : '—';
+        var d24color = dam.dev_24h == null ? 'var(--text3)' : dam.dev_24h > 0 ? '#1a7a52' : '#b85a00';
+        var devStr = dam.dev_nhwl != null ? (dam.dev_nhwl > 0 ? '+' : '') + dam.dev_nhwl.toFixed(2) + 'm vs NHWL' : '';
+        return '<div style="background:' + (dam.bg||'var(--surface)') + ';border:1px solid ' + (dam.border||'var(--border)') + ';border-radius:12px;padding:14px 16px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              '<span style="font-size:14px;font-weight:600;">' + dam.name + '</span>' +
+              '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.55);color:' + (dam.color||'var(--text2)') + ';">' + (dam.statusLabel||'') + '</span>' +
+            '</div>' +
+            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + (dam.color||'var(--text)') + ';">' + rwl + 'm</span>' +
+          '</div>' +
+          '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:3px;"><span>Low</span><span>NHWL ' + nhwl + 'm</span></div>' +
+          '<div style="background:rgba(0,0,0,0.08);border-radius:6px;height:7px;overflow:hidden;margin-bottom:8px;">' +
+            '<div style="height:100%;border-radius:6px;width:' + pct.toFixed(1) + '%;background:' + (dam.color||'#1a7a52') + ';transition:width .5s;"></div>' +
+          '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text2);">' +
+            '<span>24h: <b style="color:' + d24color + ';">' + d24 + '</b></span>' +
+            (devStr ? '<span style="color:var(--text3);">' + devStr + '</span>' : '') +
+            (dam.gate ? '<span style="color:var(--text3);">Gates: ' + dam.gate + '</span>' : '') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
   }
-  list.innerHTML = d.dams.map(function(dam) {
-    var rwl  = dam.rwl  != null ? dam.rwl.toFixed(2)  : '—';
-    var nhwl = dam.nhwl != null ? dam.nhwl.toFixed(2) : '—';
-    var floor = dam.nhwl != null ? dam.nhwl - 50 : 160;
-    var range = dam.nhwl != null ? dam.nhwl - floor : 50;
-    var pct = dam.rwl != null && dam.nhwl != null ? Math.max(0, Math.min(100, ((dam.rwl - floor) / range) * 100)) : 0;
-    var d24 = dam.dev_24h != null ? (dam.dev_24h > 0 ? '+' : '') + dam.dev_24h.toFixed(2) + 'm' : '—';
-    var d24color = dam.dev_24h == null ? 'var(--text3)' : dam.dev_24h > 0 ? '#1a7a52' : dam.dev_24h < 0 ? '#b85a00' : 'var(--text3)';
-    var devStr = dam.dev_nhwl != null ? (dam.dev_nhwl > 0 ? '+' : '') + dam.dev_nhwl.toFixed(2) + 'm vs NHWL' : '';
-    return '<div style="background:' + (dam.bg||'var(--surface)') + ';border:1px solid ' + (dam.border||'var(--border)') + ';border-radius:12px;padding:14px 16px;">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
-        '<div style="display:flex;align-items:center;gap:8px;">' +
-          '<span style="font-size:14px;font-weight:600;">' + dam.name + '</span>' +
-          '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.55);color:' + (dam.color||'var(--text2)') + ';">' + (dam.statusLabel||'') + '</span>' +
-        '</div>' +
-        '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + (dam.color||'var(--text)') + ';">' + rwl + 'm</span>' +
-      '</div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:3px;">' +
-        '<span>Low</span><span>NHWL ' + nhwl + 'm</span>' +
-      '</div>' +
-      '<div style="background:rgba(0,0,0,0.08);border-radius:6px;height:7px;overflow:hidden;margin-bottom:8px;">' +
-        '<div style="height:100%;border-radius:6px;width:' + pct.toFixed(1) + '%;background:' + (dam.color||'#1a7a52') + ';transition:width .5s;"></div>' +
-      '</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text2);">' +
-        '<span>24h: <b style="color:' + d24color + ';">' + d24 + '</b></span>' +
-        (devStr ? '<span style="color:var(--text3);">' + devStr + '</span>' : '') +
-        (dam.gate ? '<span style="color:var(--text3);">Gates: ' + dam.gate + '</span>' : '') +
-      '</div>' +
-    '</div>';
-  }).join('');
+
+  // ── Flood Watch ──
+  var fwEl = document.getElementById('waterlevel-flood-watch');
+  if (fwEl) {
+    var fw = d.flood_watch;
+    if (!fw || (!fw.basins.length && !fw.subBasins.length)) {
+      fwEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No flood watch data</div>';
+    } else {
+      var alertBasins = (fw.basins || []).filter(function(b){ return !/non.flood.watch/i.test(b.status); });
+      var alertSubs   = (fw.subBasins || []).filter(function(b){ return !/non.flood.watch/i.test(b.status); });
+      var allClear = alertBasins.length === 0 && alertSubs.length === 0;
+      var html = '';
+      if (allClear) {
+        html = '<div style="background:#e6f5ed;border:1px solid rgba(26,122,82,.2);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:10px;">' +
+          '<span style="font-size:18px;">✅</span>' +
+          '<div><div style="font-size:13px;font-weight:600;color:#1a7a52;">All Basins — Non-Flood Watch</div>' +
+          '<div style="font-size:11px;color:#1a7a52;margin-top:2px;">18 river basins + 4 dam sub-basins reporting normal conditions</div></div>' +
+        '</div>';
+      } else {
+        html = alertBasins.concat(alertSubs).map(function(b) {
+          return '<div style="background:#fdeaea;border:1px solid rgba(184,50,50,.2);border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">' +
+            '<span style="font-size:13px;font-weight:600;">' + b.name + '</span>' +
+            '<span style="font-size:11px;font-weight:600;color:#b83232;background:rgba(184,50,50,.1);padding:2px 8px;border-radius:20px;">' + b.status + '</span>' +
+          '</div>';
+        }).join('');
+      }
+      // Compact all-basins grid (collapsible summary)
+      if (allClear) {
+        html += '<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:6px 0;">Show all 18 basins</summary>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;">' +
+          (fw.basins || []).map(function(b) {
+            return '<div style="font-size:11px;padding:5px 8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;display:flex;justify-content:space-between;gap:6px;">' +
+              '<span style="color:var(--text2);">' + b.name + '</span>' +
+              '<span style="color:#1a7a52;font-weight:600;white-space:nowrap;">✓</span>' +
+            '</div>';
+          }).join('') +
+          '</div></details>';
+      }
+      fwEl.innerHTML = html;
+    }
+  }
+
+  // ── Water Level Stations ──
+  var stEl = document.getElementById('waterlevel-stations');
+  if (stEl) {
+    if (!d.stations || d.stations.length === 0) {
+      stEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No station data available</div>';
+    } else {
+      stEl.innerHTML = d.stations.map(function(s) {
+        var wl = s.wl != null ? s.wl.toFixed(2) : '—';
+        var chg = s.change != null ? (s.change > 0 ? '+' : '') + s.change.toFixed(2) + 'm' : null;
+        var chgColor = s.change == null ? 'var(--text3)' : s.change > 0 ? '#b83232' : '#1a7a52';
+        var thresholds = [];
+        if (s.alertwl != null)    thresholds.push('Alert: ' + s.alertwl.toFixed(2) + 'm');
+        if (s.alarmwl != null)    thresholds.push('Alarm: ' + s.alarmwl.toFixed(2) + 'm');
+        if (s.criticalwl != null) thresholds.push('Critical: ' + s.criticalwl.toFixed(2) + 'm');
+        return '<div style="background:' + (s.bg||'var(--surface)') + ';border:1px solid ' + (s.border||'var(--border)') + ';border-radius:12px;padding:14px 16px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              '<span style="font-size:13px;font-weight:600;">' + s.name + '</span>' +
+              (s.level !== 'normal' ? '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.55);color:' + s.color + ';">' + s.levelLabel + '</span>' : '') +
+            '</div>' +
+            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + (s.color||'var(--text)') + ';">' + wl + 'm</span>' +
+          '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text2);">' +
+            (chg ? '<span>Change: <b style="color:' + chgColor + ';">' + chg + '</b></span>' : '') +
+            (s.wl1h != null ? '<span style="color:var(--text3);">1h ago: ' + s.wl1h.toFixed(2) + 'm</span>' : '') +
+            thresholds.map(function(t){ return '<span style="color:var(--text3);">' + t + '</span>'; }).join('') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  // ── Rainfall Stations ──
+  var rfEl = document.getElementById('waterlevel-rainfall');
+  if (rfEl) {
+    if (!d.rainfall || d.rainfall.length === 0) {
+      rfEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No rainfall data available</div>';
+    } else {
+      rfEl.innerHTML = d.rainfall.map(function(r) {
+        var rfday = r.rfday != null ? r.rfday.toFixed(1) : '—';
+        var rf1h  = r.rf1h  != null ? r.rf1h.toFixed(1)  : '—';
+        var rf3h  = r.rf3h  != null ? r.rf3h.toFixed(1)  : '—';
+        return '<div style="background:' + r.bg + ';border:1px solid ' + r.border + ';border-radius:12px;padding:14px 16px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              '<span style="font-size:13px;font-weight:600;">' + r.name + '</span>' +
+              '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.55);color:' + r.color + ';">' + r.intensityLabel + '</span>' +
+            '</div>' +
+            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + r.color + ';">' + rfday + '<span style="font-size:11px;font-weight:400;">mm/day</span></span>' +
+          '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text2);">' +
+            '<span>1h: <b>' + rf1h + 'mm</b></span>' +
+            '<span>3h: <b>' + rf3h + 'mm</b></span>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+  }
 }
 
 function applyLiveWaterData(d) {
