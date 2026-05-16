@@ -19,10 +19,10 @@ const GASWATCH_URLS = {
 };
 
 // ── Cache TTLs (seconds) ──
-const CACHE_TTLS = { fuel: 900, power: 900, water: 7200 }; // water = 2 hours
+const CACHE_TTLS = { fuel: 900, power: 900, water: 7200, waterlevel: 3600 };
 
 // ── L1: in-memory (per-instance, fast) ──
-const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 }, water: { data: null, ts: 0 } };
+const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 }, water: { data: null, ts: 0 }, waterlevel: { data: null, ts: 0 } };
 
 // ── L2: Vercel KV (persistent, shared across all instances) ──
 const KV_URL   = process.env.KV_REST_API_URL;
@@ -141,6 +141,7 @@ export default async function handler(req, res) {
     if (action === "fuel") return await handleFuel(res, region);
     if (action === "power") return await handlePower(res);
     if (action === "water") return await handleWater(res);
+    if (action === "waterlevel") return await handleWaterLevel(res);
     return await handleChat(system, messages, res);
   } catch (err) {
     console.error("[chat.js] unhandled:", err);
@@ -740,76 +741,127 @@ async function handleWater(res) {
     console.warn('[water] Manila Water Firecrawl failed:', manilaFcRes.reason?.message);
   }
 
-  // 2. Dam level via AI — simpler prompt if Firecrawl already got Manila Water advisories
-  const aiPrompt = manilaWaterFromFC ? buildDamPrompt(today) : buildWaterPrompt(today);
-  let aiRaw = null;
-
-  if (geminiKey) {
-    try {
-      aiRaw = await geminiGenerate(geminiKey, aiPrompt);
-      sources.push(manilaWaterFromFC ? 'gemini (dam)' : 'gemini (dam + Manila Water)');
-    } catch(e) { console.warn('[water] Gemini failed:', e.message, '— trying Groq'); }
-  }
-
-  if (!aiRaw && groqKey) {
-    try {
-      aiRaw = await groqSearch(aiPrompt);
-      sources.push(manilaWaterFromFC ? 'groq (dam)' : 'groq (dam + Manila Water)');
-      console.log('[water] Groq fallback OK');
-    } catch(e) { console.warn('[water] Groq fallback failed:', e.message); }
-  }
-
-  let damStatus = null;
-  if (aiRaw) {
-    const json = extractJSON(aiRaw);
-    if (!json.error && json.dam_status) {
-      damStatus = json.dam_status;
-      console.log('[water] AI dam level:', json.dam_status.level);
-      if (!manilaWaterFromFC && json.interruptions) {
+  // 2. AI fallback for Manila Water advisories only (if Firecrawl failed)
+  if (!manilaWaterFromFC) {
+    let aiRaw = null;
+    if (geminiKey) {
+      try {
+        aiRaw = await geminiGenerate(geminiKey, buildWaterPrompt(today));
+        sources.push('gemini (Manila Water)');
+      } catch(e) { console.warn('[water] Gemini failed:', e.message, '— trying Groq'); }
+    }
+    if (!aiRaw && groqKey) {
+      try {
+        aiRaw = await groqSearch(buildWaterPrompt(today));
+        sources.push('groq (Manila Water)');
+        console.log('[water] Groq fallback OK');
+      } catch(e) { console.warn('[water] Groq fallback failed:', e.message); }
+    }
+    if (aiRaw) {
+      const json = extractJSON(aiRaw);
+      if (!json.error && json.interruptions) {
         interruptions.push(...json.interruptions.filter(i => i.utility === 'Manila Water'));
         if (mayniladRes.status !== 'fulfilled')
           interruptions.push(...json.interruptions.filter(i => i.utility === 'Maynilad'));
+      } else {
+        console.warn('[water] AI bad response:', JSON.stringify(json).slice(0, 150));
       }
-    } else {
-      console.warn('[water] AI bad response:', JSON.stringify(json).slice(0, 150));
     }
   }
 
-  if (!damStatus) {
-    damStatus = {
-      level: null, nhwl: 212, mddl: 180, trend: 'unknown',
-      title: 'Angat Dam — Level Unavailable',
-      subtitle: 'Live data temporarily unavailable.',
-      color: '#6b6a65', bg: '#f0efe9', border: 'rgba(107,106,101,.2)',
-      as_of: today
-    };
-  }
-
-  const result = { dam_status: damStatus, interruptions, last_updated: today, sources };
+  const result = { interruptions, last_updated: today, sources };
   result._meta = { source: sources.join(', ') || 'unavailable', cached_at: new Date().toISOString() };
   await setCache('water', result);
   res.setHeader('Cache-Control', 'public, max-age=900');
   return res.status(200).json(result);
 }
 
-function buildWaterPrompt(today) {
-  return `Today is ${today} Philippines. Find TWO things and return real current data:
-
-1. Angat Dam water level — search "MWSS Angat Dam water level ${today}" or site:mwss.gov.ph for today's elevation in meters. NHWL=212m, MDDL=180m.
-
-2. Manila Water service advisories — go to https://www.manilawater.com/customers/service-advisories and read the two tables: "Advisory on Maintenance Activities" and "Advisory on Emergency Works". Each row has: Start datetime, End datetime, Affected City/Municipality, Location of Activity, Activity, Affected Areas. Extract ALL rows from both tables.
-
-Return ONLY compact JSON, no markdown:
-{"dam_status":{"level":ACTUAL_LEVEL,"nhwl":212,"mddl":180,"trend":"RISING_FALLING_OR_STABLE","title":"Angat Dam — ACTUAL_LEVELm","subtitle":"ACTUAL_STATUS_TEXT","color":"COLOR_HEX","bg":"BG_HEX","border":"BORDER_RGBA","as_of":"${today}"},"interruptions":[{"utility":"Manila Water","typeLabel":"Maintenance OR Emergency","type":"scheduled OR emergency","city":"ACTUAL_CITY","area":"ACTUAL_STREET · ACTUAL_BARANGAY","from":"ACTUAL_START_DATE","to":"ACTUAL_END_DATE","time":"ACTUAL_TIME_WINDOW","reason":"ACTUAL_ACTIVITY"}],"last_updated":"${today}","sources":["mwss.gov.ph","manilawater.com"]}
-
-Dam color rules: level>=208 color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)" | level>=200 color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" | level>=190 color="#b85a00",bg="#fef0e0",border="rgba(184,90,0,.2)" | level<190 color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" | unknown color="#6b6a65",bg="#f0efe9",border="rgba(107,106,101,.2)".
-Use exact dates and times from the table. type="emergency" for Emergency Works table rows, type="scheduled" for Maintenance rows. If no advisories found return empty array.`;
+/* ── PAGASA DAM SCRAPER ── */
+async function fetchPAGASADams() {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch('https://www.pagasa.dost.gov.ph/flood', {
+      signal: ctrl.signal, headers: MERALCO_BROWSER_HEADERS
+    });
+    clearTimeout(t);
+    if (!r.ok) throw new Error(`PAGASA HTTP ${r.status}`);
+    return parsePAGASADamTable(await r.text());
+  } catch(e) { clearTimeout(t); throw e; }
 }
 
-function buildDamPrompt(today) {
-  return `Today is ${today} Philippines. Search "MWSS Angat Dam water level ${today}" or "Angat Dam elevation ${today}" or site:mwss.gov.ph to find today's Angat Dam water elevation in meters. NHWL=212m, MDDL=180m. Return ONLY compact JSON, no markdown:
-{"dam_status":{"level":ACTUAL_METERS,"nhwl":212,"mddl":180,"trend":"rising|falling|stable","title":"Angat Dam — XXXm","subtitle":"STATUS_TEXT","color":"COLOR","bg":"BG","border":"BORDER","as_of":"${today}"}}
-Color rules: level>=208→"#1a7a52","#e6f5ed","rgba(26,122,82,.2)" | level>=200→"#8a5a00","#fef3dc","rgba(138,90,0,.2)" | level>=190→"#b85a00","#fef0e0","rgba(184,90,0,.2)" | level<190→"#b83232","#fdeaea","rgba(184,50,50,.2)" | unknown→"#6b6a65","#f0efe9","rgba(107,106,101,.2)". Use null for level only if truly not found after searching.`;
+function parsePAGASADamTable(html) {
+  html = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+  const getText = s => s.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const pf = s => { const n = parseFloat(s); return isNaN(n) ? null : n; };
+
+  for (const tableM of html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const tbl = tableM[0];
+    if (!/angat|pantabangan|magat/i.test(tbl)) continue;
+    const dams = [];
+    for (const rowM of tbl.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...rowM[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(m => getText(m[1]));
+      if (cells.length < 5) continue;
+      const name = cells[0];
+      if (!name || name.length > 40 || !/[a-zA-Z]/.test(name)) continue;
+      if (/reservoir|water.?level|observation|nhwl|dam.?name/i.test(name)) continue;
+      const rwl = pf(cells[2]), nhwl = pf(cells[4]);
+      if (!rwl || !nhwl) continue;
+      const dev24h = pf(cells[3]), devNHWL = pf(cells[5]);
+      const dev = devNHWL ?? (rwl - nhwl);
+      let status, statusLabel, color, bg, border;
+      if (dev >= -5)        { status='high';     statusLabel='Near Full';    color='#1a4fa0'; bg='#e8effe'; border='rgba(26,79,160,.2)'; }
+      else if (dev >= -20)  { status='normal';   statusLabel='Normal';       color='#1a7a52'; bg='#e6f5ed'; border='rgba(26,122,82,.2)'; }
+      else if (dev >= -40)  { status='low';      statusLabel='Low';          color='#8a5a00'; bg='#fef3dc'; border='rgba(138,90,0,.2)'; }
+      else                  { status='critical'; statusLabel='Critical Low'; color='#b83232'; bg='#fdeaea'; border='rgba(184,50,50,.2)'; }
+      dams.push({ name, obs_time: cells[1]||'', rwl, nhwl, dev_24h: dev24h, dev_nhwl: devNHWL,
+        rule_curve: pf(cells[6]), dev_rule: pf(cells[7]), gate: cells[8]||null,
+        status, statusLabel, color, bg, border });
+    }
+    if (dams.length >= 3) return dams;
+  }
+  throw new Error('No dam table found in PAGASA page');
+}
+
+/* ── WATER LEVEL HANDLER ── */
+async function handleWaterLevel(res) {
+  const cached = await getCache('waterlevel');
+  if (cached) {
+    return res.status(200).json({ ...cached, _meta: { source: 'cache', cached_at: cached._meta?.cached_at || new Date().toISOString() } });
+  }
+  const today = phDate();
+  let dams = null;
+  const sources = [];
+
+  try {
+    dams = await fetchPAGASADams();
+    sources.push('pagasa.dost.gov.ph (direct)');
+    console.log(`[waterlevel] PAGASA OK: ${dams.length} dams`);
+  } catch(e) {
+    console.warn('[waterlevel] PAGASA direct failed:', e.message, '— trying Firecrawl');
+    try {
+      const html = await firecrawlScrape('https://www.pagasa.dost.gov.ph/flood', 'html');
+      dams = parsePAGASADamTable(html);
+      sources.push('pagasa.dost.gov.ph (Firecrawl)');
+      console.log(`[waterlevel] PAGASA Firecrawl OK: ${dams.length} dams`);
+    } catch(e2) { console.warn('[waterlevel] PAGASA Firecrawl failed:', e2.message); }
+  }
+
+  if (!dams) dams = [];
+  const result = { dams, obs_time: dams[0]?.obs_time || null, last_updated: today, sources };
+  result._meta = { source: sources.join(', ') || 'unavailable', cached_at: new Date().toISOString() };
+  await setCache('waterlevel', result);
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  return res.status(200).json(result);
+}
+
+function buildWaterPrompt(today) {
+  return `Today is ${today} Philippines. Go to https://www.manilawater.com/customers/service-advisories and read the two tables: "Advisory on Maintenance Activities" and "Advisory on Emergency Works". Each row has: Start datetime, End datetime, Affected City/Municipality, Location of Activity, Activity, Affected Areas. Extract ALL rows from both tables.
+
+Return ONLY compact JSON, no markdown:
+{"interruptions":[{"utility":"Manila Water","typeLabel":"Maintenance OR Emergency","type":"scheduled OR emergency","city":"ACTUAL_CITY","area":"ACTUAL_STREET · ACTUAL_BARANGAY","from":"ACTUAL_START_DATE","to":"ACTUAL_END_DATE","time":"ACTUAL_TIME_WINDOW","reason":"ACTUAL_ACTIVITY"}]}
+
+type="emergency" for Emergency Works rows, type="scheduled" for Maintenance rows. If no advisories found return {"interruptions":[]}.`;
 }
 
 /* ── GASWATCH PH DATA.JS SCRAPER ── */
