@@ -15,20 +15,65 @@ const GASWATCH_URLS = {
   pampanga: "https://gaswatchph.com/pampanga"
 };
 
-// ── 15-min server cache ──
-const CACHE_TTL = 15 * 60 * 1000;
+// ── Cache TTLs (seconds) ──
+const CACHE_TTLS = { fuel: 900, power: 900, water: 7200 }; // water = 2 hours
+
+// ── L1: in-memory (per-instance, fast) ──
 const apiCache = { fuel: { data: null, ts: 0 }, power: { data: null, ts: 0 }, water: { data: null, ts: 0 } };
 
-function getCache(key) {
+// ── L2: Vercel KV (persistent, shared across all instances) ──
+const KV_URL   = process.env.KV_REST_API_URL;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+const KV_PFX   = 'priceph:';
+
+async function kvGet(key) {
+  if (!KV_URL || !KV_TOKEN) return null;
+  try {
+    const res = await fetch(`${KV_URL}/get/${KV_PFX}${key}`, {
+      headers: { Authorization: `Bearer ${KV_TOKEN}` },
+      signal: AbortSignal.timeout(2000)
+    });
+    const { result } = await res.json();
+    return result ? JSON.parse(result) : null;
+  } catch(e) { console.warn('[kv] get failed:', e.message); return null; }
+}
+
+async function kvSet(key, value, ttlSeconds) {
+  if (!KV_URL || !KV_TOKEN) return;
+  try {
+    await fetch(`${KV_URL}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([['SET', KV_PFX + key, JSON.stringify(value), 'EX', ttlSeconds]]),
+      signal: AbortSignal.timeout(2000)
+    });
+  } catch(e) { console.warn('[kv] set failed:', e.message); }
+}
+
+// ── getCache: L1 → L2 → miss ──
+async function getCache(key) {
+  const ttlMs = (CACHE_TTLS[key] || 900) * 1000;
+  // L1 hit
   const e = apiCache[key];
-  if (e && e.data && (Date.now() - e.ts) < CACHE_TTL) {
-    console.log(`[cache] hit: ${key}`);
+  if (e?.data && (Date.now() - e.ts) < ttlMs) {
+    console.log(`[cache] L1 hit: ${key}`);
     return e.data;
+  }
+  // L2 hit
+  const kvData = await kvGet(key);
+  if (kvData) {
+    console.log(`[cache] L2 hit: ${key}`);
+    apiCache[key] = { data: kvData, ts: Date.now() }; // warm L1
+    return kvData;
   }
   return null;
 }
-function setCache(key, data) {
+
+// ── setCache: write to both L1 and L2 ──
+async function setCache(key, data) {
+  const ttl = CACHE_TTLS[key] || 900;
   apiCache[key] = { data, ts: Date.now() };
+  await kvSet(key, data, ttl);
 }
 
 // ── Main handler ──
@@ -140,7 +185,7 @@ async function handleChat(system, messages, res) {
 
 /* ── FUEL (GasWatch PH → Gemini → Groq → Unavailable) ── */
 async function handleFuel(res, region) {
-  const cached = getCache("fuel");
+  const cached = await getCache("fuel");
   if (cached) {
     res.setHeader("Cache-Control", "public, max-age=900");
     return res.status(200).json(cached);
@@ -255,7 +300,7 @@ async function handleFuel(res, region) {
   }
 
   result._meta = { source, cached_at: new Date().toISOString() };
-  setCache("fuel", result);
+  await setCache("fuel", result);
   res.setHeader("Cache-Control", "public, max-age=900");
   return res.status(200).json(result);
 }
@@ -326,7 +371,7 @@ function parseNGCPOutlook(html) {
 }
 /* ── POWER (Direct Meralco scrape + Gemini NGCP → Groq → Unavailable) ── */
 async function handlePower(res) {
-  const cached = getCache("power");
+  const cached = await getCache("power");
   if (cached) {
     res.setHeader("Cache-Control", "public, max-age=900");
     return res.status(200).json(cached);
@@ -463,7 +508,7 @@ async function handlePower(res) {
   }
 
   result._meta = { source, cached_at: new Date().toISOString() };
-  setCache("power", result);
+  await setCache("power", result);
   res.setHeader("Cache-Control", "public, max-age=900");
   return res.status(200).json(result);
 }
@@ -503,16 +548,16 @@ function parseMayniladAdvisories(html) {
 
 /* ── WATER SUPPLY ── */
 async function handleWater(res) {
-  const cached = getCache('water');
+  const cached = await getCache('water');
   if (cached) {
-    return res.status(200).json({ ...cached, _meta: { source: 'cache', cached_at: new Date(apiCache.water.ts).toISOString() } });
+    return res.status(200).json({ ...cached, _meta: { source: 'cache', cached_at: cached._meta?.cached_at || new Date().toISOString() } });
   }
 
   const today = phDate();
   const geminiKey = process.env.GEMINI_API_KEY;
+  const groqKey   = process.env.GROQ_API_KEY;
 
-  // Maynilad: direct scrape from homepage (simple static HTML)
-  // Manila Water: uses Next.js RSC with no public API — Gemini reads it via Google Search
+  // Maynilad: direct scrape. Manila Water + dam: Gemini (Next.js RSC, no public API)
   const [mayniladRes, geminiRes] = await Promise.allSettled([
     fetchMayniladAdvisories(),
     geminiKey ? geminiGenerate(geminiKey, buildWaterPrompt(today)) : Promise.reject(new Error('No Gemini key'))
@@ -530,24 +575,35 @@ async function handleWater(res) {
     console.warn('[water] Maynilad direct failed:', mayniladRes.reason?.message);
   }
 
+  // Try Gemini first, fall back to Groq if rate-limited
+  let aiRaw = null;
   if (geminiRes.status === 'fulfilled') {
-    const json = extractJSON(geminiRes.value);
+    aiRaw = geminiRes.value;
+    sources.push('gemini (dam + Manila Water)');
+  } else {
+    console.warn('[water] Gemini failed:', geminiRes.reason?.message, '— trying Groq');
+    if (groqKey) {
+      try {
+        aiRaw = await groqSearch(buildWaterPrompt(today));
+        sources.push('groq (dam + Manila Water)');
+        console.log('[water] Groq fallback OK');
+      } catch(e) { console.warn('[water] Groq fallback failed:', e.message); }
+    }
+  }
+
+  if (aiRaw) {
+    const json = extractJSON(aiRaw);
     if (!json.error && json.dam_status) {
       damStatus = json.dam_status;
-      sources.push('gemini (dam + Manila Water)');
-      console.log('[water] Gemini OK, dam:', json.dam_status.level, 'MW items:', json.interruptions?.length);
-      // Gemini provides Manila Water advisories (direct scrape not possible — Next.js RSC)
+      console.log('[water] AI dam level:', json.dam_status.level, 'MW items:', json.interruptions?.length);
       if (json.interruptions) {
         interruptions.push(...json.interruptions.filter(i => i.utility === 'Manila Water'));
-        // Also use Gemini Maynilad items if direct scrape failed
         if (mayniladRes.status !== 'fulfilled')
           interruptions.push(...json.interruptions.filter(i => i.utility === 'Maynilad'));
       }
     } else {
-      console.warn('[water] Gemini bad response:', JSON.stringify(json).slice(0, 150));
+      console.warn('[water] AI bad response:', JSON.stringify(json).slice(0, 150));
     }
-  } else {
-    console.warn('[water] Gemini failed:', geminiRes.reason?.message);
   }
 
   if (!damStatus) {
@@ -562,7 +618,7 @@ async function handleWater(res) {
 
   const result = { dam_status: damStatus, interruptions, last_updated: today, sources };
   result._meta = { source: sources.join(', ') || 'unavailable', cached_at: new Date().toISOString() };
-  setCache('water', result);
+  await setCache('water', result);
   res.setHeader('Cache-Control', 'public, max-age=900');
   return res.status(200).json(result);
 }
