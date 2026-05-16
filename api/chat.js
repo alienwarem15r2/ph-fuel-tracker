@@ -780,8 +780,8 @@ async function handleWater(res) {
   return res.status(200).json(result);
 }
 
-/* ── PAGASA DAM SCRAPER ── */
-async function fetchPAGASADams() {
+/* ── PAGASA FLOOD PAGE SCRAPER ── */
+async function fetchPAGASAPage() {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 10000);
   try {
@@ -790,8 +790,11 @@ async function fetchPAGASADams() {
     });
     clearTimeout(t);
     if (!r.ok) throw new Error(`PAGASA HTTP ${r.status}`);
-    return parsePAGASADamTable(await r.text());
+    return await r.text();
   } catch(e) { clearTimeout(t); throw e; }
+}
+async function fetchPAGASADams() {
+  return parsePAGASADamTable(await fetchPAGASAPage());
 }
 
 function parsePAGASADamTable(html) {
@@ -828,6 +831,73 @@ function parsePAGASADamTable(html) {
   throw new Error('No dam table found in PAGASA page');
 }
 
+function parsePAGASAFloodWatch(html) {
+  html = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+  const getText = s => s.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  for (const tableM of html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const tbl = tableM[0];
+    if (!/MAJOR RIVER BASINS/i.test(tbl)) continue;
+    const basins = [], subBasins = [];
+    let section = 'basins';
+    for (const rowM of tbl.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...rowM[1].matchAll(/<(?:td|th)[^>]*>([\s\S]*?)<\/(?:td|th)>/gi)].map(m => getText(m[1]));
+      if (cells.length < 2) continue;
+      const [name, status] = cells;
+      if (!name) continue;
+      if (/DAMS.*SUB.?BASIN|SUB.?BASIN.*STATUS/i.test(name + status)) { section = 'subbasins'; continue; }
+      if (/STATUS|MAJOR RIVER|18 MAJOR/i.test(name)) continue;
+      if (section === 'basins') basins.push({ name, status });
+      else subBasins.push({ name, status });
+    }
+    if (basins.length > 0) return { basins, subBasins };
+  }
+  return { basins: [], subBasins: [] };
+}
+
+const FFWS_BASE = 'https://pasig-marikina-tullahanffws.pagasa.dost.gov.ph';
+
+async function fetchFFWSData() {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const hdrs = { 'Referer': FFWS_BASE + '/', 'User-Agent': MERALCO_BROWSER_HEADERS['User-Agent'] };
+    const [wlRes, rfRes] = await Promise.all([
+      fetch(FFWS_BASE + '/water/main_list.do',   { signal: ctrl.signal, headers: hdrs }),
+      fetch(FFWS_BASE + '/rainfall/main_list.do', { signal: ctrl.signal, headers: hdrs })
+    ]);
+    clearTimeout(t);
+    const pfWL = s => { if (s == null) return null; const n = parseFloat(String(s).replace(/[^0-9.-]/g, '')); return isNaN(n) ? null : n; };
+    const wlRaw = wlRes.ok ? await wlRes.json() : [];
+    const rfRaw = rfRes.ok ? await rfRes.json() : [];
+
+    const stations = wlRaw.map(s => {
+      const wl = pfWL(s.wl), alertwl = pfWL(s.alertwl), alarmwl = pfWL(s.alarmwl), criticalwl = pfWL(s.criticalwl);
+      let level = 'normal', levelLabel = 'Normal', color = '#1a7a52', bg = '#e6f5ed', border = 'rgba(26,122,82,.2)';
+      if      (wl != null && criticalwl != null && wl >= criticalwl) { level='critical'; levelLabel='Critical'; color='#b83232'; bg='#fdeaea'; border='rgba(184,50,50,.2)'; }
+      else if (wl != null && alarmwl    != null && wl >= alarmwl)    { level='alarm';    levelLabel='Alarm';    color='#b83232'; bg='#fdeaea'; border='rgba(184,50,50,.2)'; }
+      else if (wl != null && alertwl    != null && wl >= alertwl)    { level='alert';    levelLabel='Alert';    color='#8a5a00'; bg='#fef3dc'; border='rgba(138,90,0,.2)'; }
+      return { name: s.obsnm, wl, alertwl, alarmwl, criticalwl,
+        wl1h: pfWL(s.wl1h), wl2h: pfWL(s.wl2h), change: pfWL(s.wlchange),
+        time: s.timestr, level, levelLabel, color, bg, border };
+    }).filter(s => s.name && s.wl != null);
+
+    const rainfall = rfRaw.map(s => {
+      const rfday = pfWL(s.rfday), rf1h = pfWL(s.rf01h), rf3h = pfWL(s.rf03h), rf30m = pfWL(s.rf30m);
+      let intensity = 'none', intensityLabel = 'No Rain', color = '#9e9d97', bg = 'var(--surface)', border = 'var(--border)';
+      if (rfday != null) {
+        if      (rfday >= 65)  { intensity='extreme';  intensityLabel='Extreme';  color='#b83232'; bg='#fdeaea'; border='rgba(184,50,50,.2)'; }
+        else if (rfday >= 30)  { intensity='heavy';    intensityLabel='Heavy';    color='#8a5a00'; bg='#fef3dc'; border='rgba(138,90,0,.2)'; }
+        else if (rfday >= 15)  { intensity='moderate'; intensityLabel='Moderate'; color='#1a4fa0'; bg='#e8effe'; border='rgba(26,79,160,.2)'; }
+        else if (rfday >= 2.5) { intensity='light';    intensityLabel='Light';    color='#1a7a52'; bg='#e6f5ed'; border='rgba(26,122,82,.2)'; }
+      }
+      return { name: s.obsnm, rfday, rf1h, rf3h, rf30m, time: s.timestr, intensity, intensityLabel, color, bg, border };
+    }).filter(s => s.name && s.rfday != null);
+
+    console.log(`[waterlevel] FFWS OK: ${stations.length} WL stations, ${rainfall.length} rainfall stations`);
+    return { stations, rainfall, obs_time: wlRaw[0]?.timestr || rfRaw[0]?.timestr || null };
+  } catch(e) { clearTimeout(t); throw e; }
+}
+
 /* ── WATER LEVEL HANDLER ── */
 async function handleWaterLevel(res) {
   const cached = await getCache('waterlevel');
@@ -835,25 +905,46 @@ async function handleWaterLevel(res) {
     return res.status(200).json({ ...cached, _meta: { source: 'cache', cached_at: cached._meta?.cached_at || new Date().toISOString() } });
   }
   const today = phDate();
-  let dams = null;
+  let dams = [], floodWatch = null, stations = [], rainfall = [];
   const sources = [];
 
-  try {
-    dams = await fetchPAGASADams();
-    sources.push('pagasa.dost.gov.ph (direct)');
-    console.log(`[waterlevel] PAGASA OK: ${dams.length} dams`);
-  } catch(e) {
-    console.warn('[waterlevel] PAGASA direct failed:', e.message, '— trying Firecrawl');
-    try {
-      const html = await firecrawlScrape('https://www.pagasa.dost.gov.ph/flood', 'html');
-      dams = parsePAGASADamTable(html);
-      sources.push('pagasa.dost.gov.ph (Firecrawl)');
-      console.log(`[waterlevel] PAGASA Firecrawl OK: ${dams.length} dams`);
-    } catch(e2) { console.warn('[waterlevel] PAGASA Firecrawl failed:', e2.message); }
+  // Fetch PAGASA page + FFWS data in parallel
+  const [pagasaResult, ffwsResult] = await Promise.allSettled([
+    (async () => {
+      let html;
+      try {
+        html = await fetchPAGASAPage();
+        sources.push('pagasa.dost.gov.ph');
+      } catch(e) {
+        console.warn('[waterlevel] PAGASA direct failed:', e.message, '— trying Firecrawl');
+        html = await firecrawlScrape('https://www.pagasa.dost.gov.ph/flood', 'html');
+        sources.push('pagasa.dost.gov.ph (Firecrawl)');
+      }
+      return { dams: parsePAGASADamTable(html), floodWatch: parsePAGASAFloodWatch(html) };
+    })(),
+    fetchFFWSData()
+  ]);
+
+  if (pagasaResult.status === 'fulfilled') {
+    dams       = pagasaResult.value.dams;
+    floodWatch = pagasaResult.value.floodWatch;
+    console.log(`[waterlevel] PAGASA OK: ${dams.length} dams, ${floodWatch?.basins?.length||0} basins`);
+  } else {
+    console.warn('[waterlevel] PAGASA failed:', pagasaResult.reason?.message);
   }
 
-  if (!dams) dams = [];
-  const result = { dams, obs_time: dams[0]?.obs_time || null, last_updated: today, sources };
+  if (ffwsResult.status === 'fulfilled') {
+    stations = ffwsResult.value.stations;
+    rainfall = ffwsResult.value.rainfall;
+    sources.push('PAGASA FFWS');
+  } else {
+    console.warn('[waterlevel] FFWS failed:', ffwsResult.reason?.message);
+  }
+
+  const result = { dams, flood_watch: floodWatch, stations, rainfall,
+    obs_time: dams[0]?.obs_time || null,
+    ffws_time: ffwsResult.status === 'fulfilled' ? ffwsResult.value.obs_time : null,
+    last_updated: today, sources };
   result._meta = { source: sources.join(', ') || 'unavailable', cached_at: new Date().toISOString() };
   await setCache('waterlevel', result);
   res.setHeader('Cache-Control', 'public, max-age=3600');
