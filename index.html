@@ -1877,27 +1877,68 @@ function applyLiveWaterLevelData(d) {
     if (!d.stations || d.stations.length === 0) {
       stEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No station data available</div>';
     } else {
-      stEl.innerHTML = d.stations.map(function(s) {
+      // Sort: critical/alarm/alert first, then normal alphabetically
+      var levelOrder = { critical: 0, alarm: 1, alert: 2, normal: 3 };
+      var sorted = d.stations.slice().sort(function(a, b) {
+        return (levelOrder[a.level]||3) - (levelOrder[b.level]||3) || a.name.localeCompare(b.name);
+      });
+      var alertCount = sorted.filter(function(s){ return s.level !== 'normal'; }).length;
+      var summary = alertCount > 0
+        ? '<div style="font-size:12px;color:#b83232;font-weight:600;margin-bottom:8px;">⚠ ' + alertCount + ' station' + (alertCount>1?'s':'')+' above alert level</div>'
+        : '<div style="font-size:12px;color:#1a7a52;margin-bottom:8px;">All stations within normal levels</div>';
+
+      stEl.innerHTML = summary + sorted.map(function(s) {
         var wl = s.wl != null ? s.wl.toFixed(2) : '—';
         var chg = s.change != null ? (s.change > 0 ? '+' : '') + s.change.toFixed(2) + 'm' : null;
         var chgColor = s.change == null ? 'var(--text3)' : s.change > 0 ? '#b83232' : '#1a7a52';
-        var thresholds = [];
-        if (s.alertwl != null)    thresholds.push('Alert: ' + s.alertwl.toFixed(2) + 'm');
-        if (s.alarmwl != null)    thresholds.push('Alarm: ' + s.alarmwl.toFixed(2) + 'm');
-        if (s.criticalwl != null) thresholds.push('Critical: ' + s.criticalwl.toFixed(2) + 'm');
+        var chgArrow = s.change == null ? '' : s.change > 0 ? ' ↑' : s.change < 0 ? ' ↓' : '';
+
+        // Threshold gauge bar
+        var gaugeHtml = '';
+        if (s.alertwl != null && s.criticalwl != null && s.wl != null) {
+          var margin = (s.criticalwl - s.alertwl) * 0.4;
+          var base = Math.max(0, s.alertwl - margin);
+          var top  = s.criticalwl + margin * 0.5;
+          var span = top - base;
+          var pct = function(v) { return Math.max(0, Math.min(100, (v - base) / span * 100)).toFixed(1); };
+          var wlPct    = pct(s.wl);
+          var alertPct = pct(s.alertwl);
+          var alarmPct = s.alarmwl != null ? pct(s.alarmwl) : null;
+          var critPct  = pct(s.criticalwl);
+          gaugeHtml =
+            '<div style="position:relative;height:8px;border-radius:6px;overflow:visible;background:rgba(0,0,0,0.06);margin:8px 0 4px;">' +
+              // Zone fills
+              '<div style="position:absolute;left:0;width:' + alertPct + '%;height:100%;background:#d4edda;border-radius:6px 0 0 6px;"></div>' +
+              (alarmPct ? '<div style="position:absolute;left:' + alertPct + '%;width:' + (parseFloat(alarmPct)-parseFloat(alertPct)).toFixed(1) + '%;height:100%;background:#fff3cd;"></div>' : '') +
+              '<div style="position:absolute;left:' + (alarmPct||alertPct) + '%;width:' + (parseFloat(critPct)-(parseFloat(alarmPct||alertPct))).toFixed(1) + '%;height:100%;background:#ffe0c0;"></div>' +
+              '<div style="position:absolute;left:' + critPct + '%;right:0;height:100%;background:#ffc9c9;border-radius:0 6px 6px 0;"></div>' +
+              // Threshold tick marks
+              '<div style="position:absolute;left:' + alertPct + '%;width:1.5px;height:140%;top:-20%;background:#8a5a00;opacity:0.7;"></div>' +
+              (alarmPct ? '<div style="position:absolute;left:' + alarmPct + '%;width:1.5px;height:140%;top:-20%;background:#c85000;opacity:0.7;"></div>' : '') +
+              '<div style="position:absolute;left:' + critPct + '%;width:1.5px;height:140%;top:-20%;background:#b83232;opacity:0.7;"></div>' +
+              // Current level cursor
+              '<div style="position:absolute;left:' + wlPct + '%;width:3px;height:180%;top:-40%;background:' + (s.color||'#1a7a52') + ';border-radius:2px;transform:translateX(-50%);z-index:3;box-shadow:0 0 3px rgba(0,0,0,0.3);"></div>' +
+            '</div>' +
+            '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-bottom:6px;">' +
+              '<span style="color:#8a5a00;">▲ Alert ' + s.alertwl.toFixed(1) + 'm</span>' +
+              (s.alarmwl ? '<span style="color:#c85000;">▲ Alarm ' + s.alarmwl.toFixed(1) + 'm</span>' : '') +
+              '<span style="color:#b83232;">▲ Critical ' + s.criticalwl.toFixed(1) + 'm</span>' +
+            '</div>';
+        }
+
         return '<div style="background:' + (s.bg||'var(--surface)') + ';border:1px solid ' + (s.border||'var(--border)') + ';border-radius:12px;padding:14px 16px;">' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
               '<span style="font-size:13px;font-weight:600;">' + s.name + '</span>' +
-              (s.level !== 'normal' ? '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.55);color:' + s.color + ';">' + s.levelLabel + '</span>' : '') +
+              (s.level !== 'normal' ? '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.6);color:' + s.color + ';">' + s.levelLabel + '</span>' : '') +
             '</div>' +
-            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + (s.color||'var(--text)') + ';">' + wl + 'm</span>' +
+            '<div style="text-align:right;">' +
+              '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + (s.color||'var(--text)') + ';">' + wl + 'm</span>' +
+              (chg ? '<span style="font-size:11px;font-weight:600;color:' + chgColor + ';margin-left:5px;">' + chgArrow + chg + '</span>' : '') +
+            '</div>' +
           '</div>' +
-          '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text2);">' +
-            (chg ? '<span>Change: <b style="color:' + chgColor + ';">' + chg + '</b></span>' : '') +
-            (s.wl1h != null ? '<span style="color:var(--text3);">1h ago: ' + s.wl1h.toFixed(2) + 'm</span>' : '') +
-            thresholds.map(function(t){ return '<span style="color:var(--text3);">' + t + '</span>'; }).join('') +
-          '</div>' +
+          gaugeHtml +
+          (s.wl1h != null ? '<div style="font-size:11px;color:var(--text3);">1h ago: ' + s.wl1h.toFixed(2) + 'm</div>' : '') +
         '</div>';
       }).join('');
     }
@@ -1909,24 +1950,54 @@ function applyLiveWaterLevelData(d) {
     if (!d.rainfall || d.rainfall.length === 0) {
       rfEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No rainfall data available</div>';
     } else {
-      rfEl.innerHTML = d.rainfall.map(function(r) {
-        var rfday = r.rfday != null ? r.rfday.toFixed(1) : '—';
-        var rf1h  = r.rf1h  != null ? r.rf1h.toFixed(1)  : '—';
-        var rf3h  = r.rf3h  != null ? r.rf3h.toFixed(1)  : '—';
+      // Sort by rfday descending
+      var rfSorted = d.rainfall.slice().sort(function(a,b){ return (b.rfday||0) - (a.rfday||0); });
+      var activeRf  = rfSorted.filter(function(r){ return r.rfday != null && r.rfday >= 2.5; });
+      var dryRf     = rfSorted.filter(function(r){ return !r.rfday || r.rfday < 2.5; });
+      var maxRf     = rfSorted[0]?.rfday || 0;
+
+      var rfSummary = activeRf.length > 0
+        ? '<div style="font-size:12px;color:#1a4fa0;font-weight:600;margin-bottom:8px;">🌧 ' + activeRf.length + ' station' + (activeRf.length>1?'s':'')+' with active rainfall · Peak: ' + maxRf.toFixed(1) + 'mm/day</div>'
+        : '<div style="font-size:12px;color:#9e9d97;margin-bottom:8px;">No active rainfall recorded</div>';
+
+      var rfCardHtml = function(r) {
+        var rfday = r.rfday != null ? r.rfday.toFixed(1) : '0.0';
+        var rf1h  = r.rf1h  != null ? r.rf1h.toFixed(1)  : '0.0';
+        var rf3h  = r.rf3h  != null ? r.rf3h.toFixed(1)  : '0.0';
+        // Mini bar scaled to 100mm max
+        var barPct = Math.min(100, (r.rfday||0) / 100 * 100).toFixed(1);
+        var barColor = r.intensity === 'extreme' ? '#b83232' : r.intensity === 'heavy' ? '#c85000' : r.intensity === 'moderate' ? '#1a4fa0' : '#1a7a52';
         return '<div style="background:' + r.bg + ';border:1px solid ' + r.border + ';border-radius:12px;padding:14px 16px;">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
               '<span style="font-size:13px;font-weight:600;">' + r.name + '</span>' +
-              '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.55);color:' + r.color + ';">' + r.intensityLabel + '</span>' +
+              '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.6);color:' + r.color + ';">' + r.intensityLabel + '</span>' +
             '</div>' +
-            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + r.color + ';">' + rfday + '<span style="font-size:11px;font-weight:400;">mm/day</span></span>' +
+            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + r.color + ';">' + rfday + '<span style="font-size:11px;font-weight:400;color:var(--text3);">mm</span></span>' +
           '</div>' +
-          '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text2);">' +
+          '<div style="background:rgba(0,0,0,0.06);border-radius:4px;height:5px;margin-bottom:7px;overflow:hidden;">' +
+            '<div style="height:100%;border-radius:4px;width:' + barPct + '%;background:' + barColor + ';transition:width .5s;"></div>' +
+          '</div>' +
+          '<div style="display:flex;gap:12px;font-size:11px;color:var(--text2);">' +
             '<span>1h: <b>' + rf1h + 'mm</b></span>' +
             '<span>3h: <b>' + rf3h + 'mm</b></span>' +
           '</div>' +
         '</div>';
-      }).join('');
+      };
+
+      var dryHtml = dryRf.length > 0
+        ? '<details style="margin-top:4px;"><summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:6px 0;">' + dryRf.length + ' stations with no rain</summary>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;">' +
+            dryRf.map(function(r){
+              return '<div style="font-size:11px;padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;display:flex;justify-content:space-between;">' +
+                '<span style="color:var(--text2);">' + r.name + '</span>' +
+                '<span style="color:var(--text3);">0.0mm</span>' +
+              '</div>';
+            }).join('') +
+            '</div></details>'
+        : '';
+
+      rfEl.innerHTML = rfSummary + activeRf.map(rfCardHtml).join('') + dryHtml;
     }
   }
 }
