@@ -481,8 +481,10 @@ async function handlePower(res) {
       try {
         const raw = await groqSearch(buildNGCPPrompt(today));
         const json = extractJSON(raw);
-        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Groq OK"); }
-        else console.warn("[power] NGCP Groq bad response:", JSON.stringify(json).slice(0, 200));
+        const title = json.grid_status?.title || '';
+        const isPlaceholder = title.includes('NNN') || title.includes('[') || json.grid_status?.pso?.luzon?.capacity == null;
+        if (!json.error && json.grid_status && !isPlaceholder) { ngcpData = json; console.log("[power] NGCP Groq OK"); }
+        else console.warn("[power] NGCP Groq returned placeholder/bad response:", JSON.stringify(json).slice(0, 200));
       } catch(e) { console.warn("[power] NGCP Groq failed:", e.message, "— trying Firecrawl"); }
     }
 
@@ -500,8 +502,10 @@ async function handlePower(res) {
       try {
         const raw = await geminiGenerate(geminiKey, buildNGCPPrompt(today));
         const json = extractJSON(raw);
-        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Gemini OK"); }
-        else console.warn("[power] NGCP Gemini bad response:", JSON.stringify(json).slice(0, 200));
+        const title = json.grid_status?.title || '';
+        const isPlaceholder = title.includes('NNN') || title.includes('[') || json.grid_status?.pso?.luzon?.capacity == null;
+        if (!json.error && json.grid_status && !isPlaceholder) { ngcpData = json; console.log("[power] NGCP Gemini OK"); }
+        else console.warn("[power] NGCP Gemini returned placeholder/bad response:", JSON.stringify(json).slice(0, 200));
       } catch(e) { console.warn("[power] NGCP Gemini failed:", e.message); }
     }
   }
@@ -1551,15 +1555,26 @@ function parseMeralcoMaintenanceInterruptions(html) {
 }
 
 function buildNGCPPrompt(today) {
-  return `Today is ${today} Philippines. Go to https://www.ngcp.ph/ and read the Power Situation Outlook table (id="table-dailyoutlook"). Extract the exact MW values for Luzon, Visayas, and Mindanao: Available Generating Capacity, System Peak Demand, and Operating Margin. Also get the "as of" timestamp shown in the table.
+  return `Today is ${today} Philippines. Visit https://www.ngcp.ph/ and read the Power Situation Outlook table. Extract the ACTUAL current values — do NOT use placeholder text or copy any example.
 
-Derive the Luzon alert level from Operating Margin: if margin < 0 = red alert (insufficient supply), if margin < 600 = yellow alert (tight reserve), else = normal.
+Fields to extract:
+- "as of" timestamp from the table header
+- Luzon: Available Generating Capacity (MW), System Peak Demand (MW), Operating Margin (MW)
+- Visayas: same three values
+- Mindanao: same three values
 
-Return ONLY compact JSON, no markdown:
-{"grid_status":{"level":"normal","title":"Luzon Grid — Normal (+NNN MW)","subtitle":"Adequate operating reserve.","color":"#1a7a52","bg":"#e6f5ed","border":"rgba(26,122,82,.2)","alert_times":[],"pso":{"as_of":"6:00 PM, Friday, May 15, 2026","luzon":{"capacity":12131,"demand":12802,"margin":-671},"visayas":{"capacity":2390,"demand":2502,"margin":-112},"mindanao":{"capacity":3281,"demand":2505,"margin":776}}}}
+Alert level based on Luzon Operating Margin (actual number, not estimated):
+- margin < 0 → level="red", title="Luzon Grid — Insufficient Supply ([ACTUAL_MARGIN] MW)"
+- margin < 600 → level="yellow", title="Luzon Grid — Yellow Alert (+[ACTUAL_MARGIN] MW)"
+- margin ≥ 600 → level="normal", title="Luzon Grid — Normal (+[ACTUAL_MARGIN] MW)"
 
-Color rules — red: color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" · yellow: color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" · normal: color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)".
-Use the actual current MW numbers from the NGCP page. If operating margin is negative, the title must say "Insufficient Supply (−NNN MW)". If yellow, title is "Yellow Alert (+NNN MW)".`;
+Color rules:
+- red: color="#b83232", bg="#fdeaea", border="rgba(184,50,50,.2)"
+- yellow: color="#8a5a00", bg="#fef3dc", border="rgba(138,90,0,.2)"
+- normal: color="#1a7a52", bg="#e6f5ed", border="rgba(26,122,82,.2)"
+
+Return ONLY this compact JSON structure filled with REAL numbers from the page (no markdown, no explanation):
+{"grid_status":{"level":"[red|yellow|normal]","title":"[computed above]","subtitle":"[one sentence on reserve status]","color":"[per rules]","bg":"[per rules]","border":"[per rules]","alert_times":[],"pso":{"as_of":"[actual timestamp from table]","luzon":{"capacity":[integer],"demand":[integer],"margin":[integer]},"visayas":{"capacity":[integer],"demand":[integer],"margin":[integer]},"mindanao":{"capacity":[integer],"demand":[integer],"margin":[integer]}}}}`;
 }
 
 function buildPowerPrompt(today) {
