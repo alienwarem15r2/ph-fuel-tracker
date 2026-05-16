@@ -247,7 +247,7 @@ async function handleFuel(res, region) {
   let [gwData, adjData, forecastData] = await Promise.all([
     scrapeGasWatch(region).catch(e => { console.warn("[fuel] GasWatch failed:", e.message); return null; }),
     fetchDOEAdjustment(today, geminiKey, groqKey),
-    fetchNextWeekForecast(today, geminiKey)
+    fetchNextWeekForecast(today, geminiKey, groqKey)
   ]);
 
   // 1b. GasWatch Firecrawl fallback (if data.js scrape failed)
@@ -1227,20 +1227,39 @@ function buildForecastPrompt(today) {
 Rules: gasoline/diesel/kerosene/lpg = signed strings like "-2.00" or "+1.50" per liter; signal = "increase", "rollback", "mixed", or "stable"; confidence = "confirmed" (DOE official), "expected" (analyst forecast), or "unknown"; note = 1-2 sentence summary of what to expect. Return null values if no next-week forecast is available yet.`;
 }
 
-async function fetchNextWeekForecast(today, geminiKey) {
-  if (!geminiKey) return null;
-  try {
-    const raw = await geminiGenerate(geminiKey, buildForecastPrompt(today));
-    const json = extractJSON(raw);
-    if (!json.error && json.next_week_forecast) {
-      const f = json.next_week_forecast;
-      if (f.gasoline || f.diesel || f.kerosene || f.note) return f;
+async function fetchNextWeekForecast(today, geminiKey, groqKey) {
+  const prompt = buildForecastPrompt(today);
+  if (geminiKey) {
+    try {
+      const raw = await geminiGenerate(geminiKey, prompt);
+      const json = extractJSON(raw);
+      if (!json.error && json.next_week_forecast) {
+        const f = json.next_week_forecast;
+        if (f.gasoline || f.diesel || f.kerosene || f.note) {
+          console.log("[forecast] Gemini OK");
+          return f;
+        }
+      }
+    } catch (e) {
+      console.warn("[forecast] Gemini failed:", e.message, "— trying Groq");
     }
-    return null;
-  } catch (e) {
-    console.warn("[forecast] Gemini failed:", e.message);
-    return null;
   }
+  if (groqKey) {
+    try {
+      const raw = await groqGenerate(groqKey, prompt);
+      const json = extractJSON(raw);
+      if (!json.error && json.next_week_forecast) {
+        const f = json.next_week_forecast;
+        if (f.gasoline || f.diesel || f.kerosene || f.note) {
+          console.log("[forecast] Groq OK");
+          return f;
+        }
+      }
+    } catch (e) {
+      console.warn("[forecast] Groq failed:", e.message);
+    }
+  }
+  return null;
 }
 
 /* ── MERALCO DIRECT SCRAPER ── */
