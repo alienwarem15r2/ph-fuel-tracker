@@ -1381,28 +1381,28 @@ function parseMeralcoAlertInterruptions(html) {
 function parseMeralcoMaintenanceInterruptions(html) {
   html = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
 
-  // Split at each views-row so each chunk is one self-contained maintenance item
-  const blocks = html.split(/<div[^>]*class="[^"]*views-row[^"]*"[^>]*>/i).slice(1);
+  // Find all title positions first, then extract the block between each consecutive pair
+  const titleRx = /<h3[^>]*class="[^"]*field-content[^"]*"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/gi;
+  const titleMatches = [...html.matchAll(titleRx)];
   const interruptions = [];
 
-  for (const block of blocks) {
-    if (interruptions.length >= 15) break;
+  for (let i = 0; i < Math.min(titleMatches.length, 15); i++) {
+    const m        = titleMatches[i];
+    const blockEnd = i + 1 < titleMatches.length ? titleMatches[i + 1].index : html.length;
+    const block    = html.substring(m.index, blockEnd);
 
-    // Title: DATE - City (Area)
-    const titleM = block.match(/<h3[^>]*class="[^"]*field-content[^"]*"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
-    if (!titleM) continue;
-    const full    = titleM[1].trim();
+    const full    = m[1].trim();
     const parts   = full.match(/^(.+?,\s*\d{4})\s*-\s*(.+)$/);
     const date    = parts ? parts[1].trim() : full;
     const locFull = parts ? parts[2].trim() : full;
 
-    // City from location field (fall back to title)
-    const cityM = block.match(/views-field-field-service-maintenance-loc[\s\S]{0,600}?class="field-content"[^>]*>\s*([^<\n]{1,80}?)\s*<\/div>/i);
+    // City from location field (search within this block only)
+    const cityM = block.match(/views-field-field-service-maintenance-loc[\s\S]{0,1000}?class="field-content"[^>]*>\s*([^<\n]{1,80}?)\s*<\/div>/i);
     const city  = (cityM ? cityM[1].trim() : null) || locFull.split('(')[0].trim();
 
-    // Time window from first BETWEEN…strong inside views-field-body
-    const timeM   = block.match(/views-field-body[\s\S]{0,1500}?<strong>(BETWEEN[\s\S]*?)<\/strong>/i);
-    const timeRaw = timeM ? timeM[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : null;
+    // Time window (search within this block only)
+    const timeM    = block.match(/views-field-body[\s\S]{0,2000}?<strong>(BETWEEN[\s\S]*?)<\/strong>/i);
+    const timeRaw  = timeM ? timeM[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : null;
     const timeSlot = timeRaw ? timeRaw.replace(/\s*[–\-]\s*PORTIONS?.*/i, '').trim().substring(0, 100) : 'See schedule';
     const circuitM = timeRaw ? timeRaw.match(/PORTIONS?\s+OF\s+(CIRCUIT\s+\S+)/i) : null;
     const circuit  = circuitM ? circuitM[1].trim() : null;
