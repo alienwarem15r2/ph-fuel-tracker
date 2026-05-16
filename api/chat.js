@@ -7,6 +7,9 @@ const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_MODEL = "gemini-2.0-flash-lite";
 
+const FIRECRAWL_BASE = 'https://api.firecrawl.dev/v1';
+const FC_DAILY_LIMIT = 16;
+
 const GASWATCH_URLS = {
   metro_manila: "https://gaswatchph.com/",
   cavite: "https://gaswatchph.com/cavite",
@@ -48,6 +51,48 @@ async function kvSet(key, value, ttlSeconds) {
       signal: AbortSignal.timeout(2000)
     });
   } catch(e) { console.warn('[kv] set failed:', e.message); }
+}
+
+// ── Firecrawl daily rate limiter (shared counter across all handlers) ──
+async function fcGetCount() {
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+  const n = await kvGet('fc:' + date);
+  return n ? parseInt(n) : 0;
+}
+
+async function fcIncrCount() {
+  if (!KV_URL || !KV_TOKEN) return;
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+  try {
+    await fetch(`${KV_URL}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([
+        ['INCR', KV_PFX + 'fc:' + date],
+        ['EXPIRE', KV_PFX + 'fc:' + date, 90000]
+      ]),
+      signal: AbortSignal.timeout(2000)
+    });
+  } catch(e) { console.warn('[fc] incr failed:', e.message); }
+}
+
+async function firecrawlScrape(url, format = 'markdown') {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!apiKey) throw new Error('No FIRECRAWL_API_KEY');
+  const count = await fcGetCount();
+  if (count >= FC_DAILY_LIMIT) throw new Error(`Firecrawl daily limit reached (${count}/${FC_DAILY_LIMIT})`);
+  const res = await fetch(`${FIRECRAWL_BASE}/scrape`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, formats: [format], onlyMainContent: true }),
+    signal: AbortSignal.timeout(30000)
+  });
+  await fcIncrCount();
+  if (!res.ok) throw new Error(`Firecrawl HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  if (!data.success) throw new Error('Firecrawl: ' + (data.error || 'failed'));
+  console.log(`[fc] scraped ${url} (${count + 1}/${FC_DAILY_LIMIT} today)`);
+  return format === 'html' ? (data.data?.html || '') : (data.data?.markdown || '');
 }
 
 // ── getCache: L1 → L2 → miss ──
@@ -198,11 +243,23 @@ async function handleFuel(res, region) {
   const groqKey   = process.env.GROQ_API_KEY;
 
   // 1. GasWatch + DOE adjustment + next-week forecast in parallel
-  const [gwData, adjData, forecastData] = await Promise.all([
+  let [gwData, adjData, forecastData] = await Promise.all([
     scrapeGasWatch(region).catch(e => { console.warn("[fuel] GasWatch failed:", e.message); return null; }),
     fetchDOEAdjustment(today, geminiKey, groqKey),
     fetchNextWeekForecast(today, geminiKey)
   ]);
+
+  // 1b. GasWatch Firecrawl fallback (if data.js scrape failed)
+  if (!gwData) {
+    try {
+      const md = await firecrawlScrape('https://gaswatchph.com/');
+      const parsed = parseGasWatchMarkdown(md);
+      if (parsed && parsed.prices?.petron?.ron91 > 50) {
+        gwData = parsed;
+        console.log("[fuel] GasWatch Firecrawl OK, ron91:", parsed.prices.petron.ron91);
+      }
+    } catch(e) { console.warn("[fuel] GasWatch Firecrawl failed:", e.message); }
+  }
 
   if (gwData && gwData.prices && gwData.prices.petron && gwData.prices.petron.ron91 > 50) {
     const baseAdj = gwData.adjustment || { gasoline_ron91_95: null, diesel_std: null, kerosene: null, lpg_per_kg: null, note: "GasWatch PH community + DOE data" };
@@ -387,18 +444,39 @@ async function handlePower(res) {
     fetchNGCPPage()
   ]);
 
-  const meralcoData = meralcoResult.status === 'fulfilled' ? meralcoResult.value : null;
+  let meralcoData = meralcoResult.status === 'fulfilled' ? meralcoResult.value : null;
   // Wrap direct PSO result into the same shape as the Gemini response { grid_status }
   let ngcpData = ngcpDirectResult.status === 'fulfilled'
     ? { grid_status: ngcpDirectResult.value }
     : null;
 
   if (meralcoData) console.log("[power] Meralco direct OK, interruptions:", meralcoData.interruptions.length);
-  else             console.warn("[power] Meralco direct failed:", meralcoResult.reason?.message);
+  else {
+    console.warn("[power] Meralco direct failed:", meralcoResult.reason?.message, "— trying Firecrawl");
+    try {
+      const [alertHtml, maintHtml] = await Promise.all([
+        firecrawlScrape('https://company.meralco.com.ph/news-and-advisories/yellow-and-red-alert-locations', 'html'),
+        firecrawlScrape('https://company.meralco.com.ph/news-and-advisories/maintenance-schedule', 'html')
+      ]);
+      meralcoData = {
+        interruptions: [
+          ...parseMeralcoAlertInterruptions(alertHtml),
+          ...parseMeralcoMaintenanceInterruptions(maintHtml)
+        ]
+      };
+      console.log("[power] Meralco Firecrawl OK, interruptions:", meralcoData.interruptions.length);
+    } catch(e) { console.warn("[power] Meralco Firecrawl failed:", e.message); }
+  }
 
   if (!ngcpData) {
-    console.warn("[power] NGCP direct scrape failed:", ngcpDirectResult.reason?.message, "— trying Gemini");
-    if (geminiKey) {
+    console.warn("[power] NGCP direct scrape failed:", ngcpDirectResult.reason?.message, "— trying Firecrawl");
+    try {
+      const html = await firecrawlScrape('https://www.ngcp.ph/', 'html');
+      ngcpData = { grid_status: parseNGCPOutlook(html) };
+      console.log("[power] NGCP Firecrawl OK");
+    } catch(e) { console.warn("[power] NGCP Firecrawl failed:", e.message, "— trying Gemini"); }
+
+    if (!ngcpData && geminiKey) {
       try {
         const raw = await geminiGenerate(geminiKey, buildNGCPPrompt(today));
         const json = extractJSON(raw);
@@ -546,6 +624,81 @@ function parseMayniladAdvisories(html) {
   return items;
 }
 
+/* ── MANILA WATER MARKDOWN PARSER (Firecrawl output) ── */
+function parseManilWaterMarkdown(md) {
+  const items = [];
+  function parseSection(text, type, typeLabel) {
+    for (const line of text.split('\n')) {
+      const t = line.trim();
+      if (!t.startsWith('|') || t.includes('---') || /start\s*date|begin\s*date/i.test(t)) continue;
+      const cols = t.split('|').map(c => c.trim()).filter(c => c);
+      if (cols.length < 4) continue;
+      const [fromRaw, toRaw, city, location, activity, affected] = cols;
+      if (!city || city.length > 80 || /city.*municipality/i.test(city)) continue;
+      const fromDate = extractMDDate(fromRaw);
+      const toDate   = extractMDDate(toRaw);
+      const fromTime = extractMDTime(fromRaw);
+      const toTime   = extractMDTime(toRaw);
+      items.push({
+        utility: 'Manila Water', type, typeLabel,
+        city: city.replace(/\s*(city|municipality)\s*$/i, '').trim(),
+        area: [location, affected].filter(Boolean).map(s => s.trim()).join(' · '),
+        from: fromDate, to: toDate,
+        time: fromTime && toTime ? `${fromTime} – ${toTime}` : (fromTime || toTime || null),
+        reason: (activity || '').trim()
+      });
+    }
+  }
+  const maintIdx = md.search(/advisory on maintenance/i);
+  const emergIdx = md.search(/advisory on emergency/i);
+  if (maintIdx !== -1) parseSection(md.slice(maintIdx, emergIdx > maintIdx ? emergIdx : md.length), 'scheduled', 'Maintenance');
+  if (emergIdx !== -1)  parseSection(md.slice(emergIdx), 'emergency', 'Emergency');
+  return items;
+}
+
+function extractMDDate(s) {
+  if (!s) return null;
+  const m = s.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*[\s.,]+\d{1,2}[,\s]+\d{4}/i);
+  if (!m) return null;
+  const d = new Date(m[0]);
+  return isNaN(d.getTime()) ? m[0] : d.toISOString().split('T')[0];
+}
+
+function extractMDTime(s) {
+  if (!s) return null;
+  const m = s.match(/\d{1,2}:\d{2}\s*[ap]\.?m\.?/i);
+  return m ? m[0].replace(/\./g, '').trim() : null;
+}
+
+/* ── GASWATCH MARKDOWN PARSER (Firecrawl output) ── */
+function parseGasWatchMarkdown(md) {
+  function grab(...patterns) {
+    for (const pat of patterns) {
+      const m = md.match(pat);
+      if (m) { const n = parseFloat(m[1]); if (n > 50 && n < 200) return n; }
+    }
+    return 0;
+  }
+  const petronUnl = grab(/petron[\s\S]{0,300}?ron\s*91[^₱\d]*[₱]?\s*(\d+\.\d+)/i, /petron[\s\S]{0,300}?unleaded[^₱\d]*[₱]?\s*(\d+\.\d+)/i);
+  const petronDsl = grab(/petron[\s\S]{0,300}?diesel[^₱\d]*[₱]?\s*(\d+\.\d+)/i);
+  const shellUnl  = grab(/shell[\s\S]{0,300}?ron\s*91[^₱\d]*[₱]?\s*(\d+\.\d+)/i,  /shell[\s\S]{0,300}?unleaded[^₱\d]*[₱]?\s*(\d+\.\d+)/i);
+  const shellDsl  = grab(/shell[\s\S]{0,300}?diesel[^₱\d]*[₱]?\s*(\d+\.\d+)/i);
+  const unioilUnl = grab(/unioil[\s\S]{0,300}?ron\s*91[^₱\d]*[₱]?\s*(\d+\.\d+)/i, /unioil[\s\S]{0,300}?unleaded[^₱\d]*[₱]?\s*(\d+\.\d+)/i);
+  const unioilDsl = grab(/unioil[\s\S]{0,300}?diesel[^₱\d]*[₱]?\s*(\d+\.\d+)/i);
+  if (!petronUnl) return null;
+  const r = (v, d) => v > 0 ? Math.round((v + d) * 100) / 100 : 0;
+  return {
+    prices: {
+      petron: { ron91: petronUnl, ron95: r(petronUnl, 3.10), ron100: r(petronUnl, 13.15), diesel_std: petronDsl, diesel_prem: r(petronDsl, 4.25), kerosene: 0 },
+      shell:  { ron91: shellUnl,  ron95: r(shellUnl,  3.10), ron97:  r(shellUnl,  6.64),  diesel_std: shellDsl,  diesel_prem: r(shellDsl,  4.70), kerosene: 0 },
+      unioil: { ron91: unioilUnl, ron95: r(unioilUnl, 3.00), diesel_std: unioilDsl, kerosene: 0 }
+    },
+    adjustment: { gasoline_ron91_95: null, diesel_std: null, kerosene: null, lpg_per_kg: null, note: 'GasWatch PH (Firecrawl)' },
+    foundCount: (petronUnl > 0 ? 1 : 0) + (shellUnl > 0 ? 1 : 0) + (unioilUnl > 0 ? 1 : 0),
+    advisories: []
+  };
+}
+
 /* ── WATER SUPPLY ── */
 async function handleWater(res) {
   const cached = await getCache('water');
@@ -557,14 +710,13 @@ async function handleWater(res) {
   const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey   = process.env.GROQ_API_KEY;
 
-  // Maynilad: direct scrape. Manila Water + dam: Gemini (Next.js RSC, no public API)
-  const [mayniladRes, geminiRes] = await Promise.allSettled([
+  // 1. Maynilad direct + Firecrawl Manila Water in parallel
+  const [mayniladRes, manilaFcRes] = await Promise.allSettled([
     fetchMayniladAdvisories(),
-    geminiKey ? geminiGenerate(geminiKey, buildWaterPrompt(today)) : Promise.reject(new Error('No Gemini key'))
+    firecrawlScrape('https://www.manilawater.com/customers/service-advisories')
   ]);
 
   let interruptions = [];
-  let damStatus = null;
   const sources = [];
 
   if (mayniladRes.status === 'fulfilled') {
@@ -575,28 +727,45 @@ async function handleWater(res) {
     console.warn('[water] Maynilad direct failed:', mayniladRes.reason?.message);
   }
 
-  // Try Gemini first, fall back to Groq if rate-limited
-  let aiRaw = null;
-  if (geminiRes.status === 'fulfilled') {
-    aiRaw = geminiRes.value;
-    sources.push('gemini (dam + Manila Water)');
+  let manilaWaterFromFC = false;
+  if (manilaFcRes.status === 'fulfilled') {
+    try {
+      const mwItems = parseManilWaterMarkdown(manilaFcRes.value);
+      interruptions.push(...mwItems);
+      sources.push('manilawater.com (Firecrawl)');
+      manilaWaterFromFC = true;
+      console.log('[water] Manila Water Firecrawl OK:', mwItems.length, 'items');
+    } catch(e) { console.warn('[water] Manila Water FC parse failed:', e.message); }
   } else {
-    console.warn('[water] Gemini failed:', geminiRes.reason?.message, '— trying Groq');
-    if (groqKey) {
-      try {
-        aiRaw = await groqSearch(buildWaterPrompt(today));
-        sources.push('groq (dam + Manila Water)');
-        console.log('[water] Groq fallback OK');
-      } catch(e) { console.warn('[water] Groq fallback failed:', e.message); }
-    }
+    console.warn('[water] Manila Water Firecrawl failed:', manilaFcRes.reason?.message);
   }
 
+  // 2. Dam level via AI — simpler prompt if Firecrawl already got Manila Water advisories
+  const aiPrompt = manilaWaterFromFC ? buildDamPrompt(today) : buildWaterPrompt(today);
+  let aiRaw = null;
+
+  if (geminiKey) {
+    try {
+      aiRaw = await geminiGenerate(geminiKey, aiPrompt);
+      sources.push(manilaWaterFromFC ? 'gemini (dam)' : 'gemini (dam + Manila Water)');
+    } catch(e) { console.warn('[water] Gemini failed:', e.message, '— trying Groq'); }
+  }
+
+  if (!aiRaw && groqKey) {
+    try {
+      aiRaw = await groqSearch(aiPrompt);
+      sources.push(manilaWaterFromFC ? 'groq (dam)' : 'groq (dam + Manila Water)');
+      console.log('[water] Groq fallback OK');
+    } catch(e) { console.warn('[water] Groq fallback failed:', e.message); }
+  }
+
+  let damStatus = null;
   if (aiRaw) {
     const json = extractJSON(aiRaw);
     if (!json.error && json.dam_status) {
       damStatus = json.dam_status;
-      console.log('[water] AI dam level:', json.dam_status.level, 'MW items:', json.interruptions?.length);
-      if (json.interruptions) {
+      console.log('[water] AI dam level:', json.dam_status.level);
+      if (!manilaWaterFromFC && json.interruptions) {
         interruptions.push(...json.interruptions.filter(i => i.utility === 'Manila Water'));
         if (mayniladRes.status !== 'fulfilled')
           interruptions.push(...json.interruptions.filter(i => i.utility === 'Maynilad'));
@@ -635,7 +804,15 @@ Return ONLY compact JSON, no markdown:
 
 Dam color rules: level>=208 color="#1a7a52",bg="#e6f5ed",border="rgba(26,122,82,.2)" | level>=200 color="#8a5a00",bg="#fef3dc",border="rgba(138,90,0,.2)" | level>=190 color="#b85a00",bg="#fef0e0",border="rgba(184,90,0,.2)" | level<190 color="#b83232",bg="#fdeaea",border="rgba(184,50,50,.2)" | unknown color="#6b6a65",bg="#f0efe9",border="rgba(107,106,101,.2)".
 Use exact dates and times from the table. type="emergency" for Emergency Works table rows, type="scheduled" for Maintenance rows. If no advisories found return empty array.`;
-}/* ── GASWATCH PH DATA.JS SCRAPER ── */
+}
+
+function buildDamPrompt(today) {
+  return `Today is ${today} Philippines. Search MWSS (mwss.gov.ph) or news for today's Angat Dam water elevation in meters. NHWL=212m, MDDL=180m. Return ONLY compact JSON, no markdown:
+{"dam_status":{"level":ACTUAL_METERS,"nhwl":212,"mddl":180,"trend":"rising|falling|stable","title":"Angat Dam — XXXm","subtitle":"STATUS_TEXT","color":"COLOR","bg":"BG","border":"BORDER","as_of":"${today}"}}
+Color rules: level>=208→"#1a7a52","#e6f5ed","rgba(26,122,82,.2)" | level>=200→"#8a5a00","#fef3dc","rgba(138,90,0,.2)" | level>=190→"#b85a00","#fef0e0","rgba(184,90,0,.2)" | level<190→"#b83232","#fdeaea","rgba(184,50,50,.2)" | unknown→"#6b6a65","#f0efe9","rgba(107,106,101,.2)". Use null for level if not found after searching.`;
+}
+
+/* ── GASWATCH PH DATA.JS SCRAPER ── */
 
 // Extract a JS object/array block starting at `startIdx` in `src` using brace counting.
 function extractBlock(src, startIdx) {
