@@ -8,7 +8,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_MODEL = "gemini-2.0-flash-lite";
 
 const FIRECRAWL_BASE = 'https://api.firecrawl.dev/v1';
-const FC_DAILY_LIMIT = 16;
+const FC_DAILY_LIMIT = 20;
 
 const GASWATCH_URLS = {
   metro_manila: "https://gaswatchph.com/",
@@ -474,21 +474,41 @@ async function handlePower(res) {
   }
 
   if (!ngcpData) {
-    console.warn("[power] NGCP direct scrape failed:", ngcpDirectResult.reason?.message, "— trying Firecrawl");
-    try {
-      const html = await firecrawlScrape('https://www.ngcp.ph/', 'html');
-      ngcpData = { grid_status: parseNGCPOutlook(html) };
-      console.log("[power] NGCP Firecrawl OK");
-    } catch(e) { console.warn("[power] NGCP Firecrawl failed:", e.message, "— trying Gemini"); }
+    console.warn("[power] NGCP direct scrape failed:", ngcpDirectResult.reason?.message, "— trying Groq");
 
+    // 1. Groq web search (free, no Firecrawl credit)
+    if (groqKey) {
+      try {
+        const raw = await groqSearch(buildNGCPPrompt(today));
+        const json = extractJSON(raw);
+        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Groq OK"); }
+        else console.warn("[power] NGCP Groq bad response:", JSON.stringify(json).slice(0, 200));
+      } catch(e) { console.warn("[power] NGCP Groq failed:", e.message, "— trying Firecrawl"); }
+    }
+
+    // 2. Firecrawl (costs 1 credit — only if Groq failed)
+    if (!ngcpData) {
+      try {
+        const html = await firecrawlScrape('https://www.ngcp.ph/', 'html');
+        ngcpData = { grid_status: parseNGCPOutlook(html) };
+        console.log("[power] NGCP Firecrawl OK");
+      } catch(e) { console.warn("[power] NGCP Firecrawl failed:", e.message, "— trying Gemini"); }
+    }
+
+    // 3. Gemini (last resort)
     if (!ngcpData && geminiKey) {
       try {
         const raw = await geminiGenerate(geminiKey, buildNGCPPrompt(today));
         const json = extractJSON(raw);
-        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Gemini fallback OK, pso:", !!json.grid_status.pso); }
-        else { console.warn("[power] NGCP Gemini bad response:", JSON.stringify(json).slice(0, 200)); }
-      } catch (e) { console.warn("[power] NGCP Gemini fallback failed:", e.message); }
+        if (!json.error && json.grid_status) { ngcpData = json; console.log("[power] NGCP Gemini OK"); }
+        else console.warn("[power] NGCP Gemini bad response:", JSON.stringify(json).slice(0, 200));
+      } catch(e) { console.warn("[power] NGCP Gemini failed:", e.message); }
     }
+  }
+
+  // Persist last-known-good NGCP data (7-day TTL) so it survives Firecrawl quota exhaustion
+  if (ngcpData && ngcpData.grid_status) {
+    kvSet('ngcp_last_good', ngcpData.grid_status, 604800).catch(() => {});
   }
 
   let result = null;
@@ -505,43 +525,28 @@ async function handlePower(res) {
     source = "direct+gemini";
   }
 
-  // Case 2: Meralco scraped OK but NGCP query failed — try Groq for NGCP
+  // Case 2: Meralco scraped OK but NGCP query failed — use last-known-good NGCP if available
   if (!result && meralcoData) {
-    if (groqKey) {
-      try {
-        const raw = await groqSearch(buildNGCPPrompt(today));
-        const json = extractJSON(raw);
-        if (!json.error && json.grid_status) {
-          result = {
-            grid_status: json.grid_status,
-            interruptions: meralcoData.interruptions,
-            last_updated: today,
-            sources: ['company.meralco.com.ph (direct)', 'ngcp.ph (via Groq)']
-          };
-          source = "direct+groq";
-        }
-      } catch (e) {
-        console.warn("[power] Groq NGCP fallback failed:", e.message);
-      }
-    }
-    // Even if NGCP fails, still return Meralco data with "normal" grid
-    if (!result) {
-      result = {
-        grid_status: {
-          level: "normal",
-          title: "Luzon Grid — Status Unknown",
-          subtitle: "NGCP live status unavailable. Grid status unconfirmed.",
-          color: "#6b6a65",
-          bg: "#f0efe9",
-          border: "rgba(0,0,0,.1)",
-          alert_times: []
-        },
-        interruptions: meralcoData.interruptions,
-        last_updated: today,
-        sources: ['company.meralco.com.ph (direct)']
-      };
-      source = "direct";
-    }
+    const lastGoodNgcp = await kvGet('ngcp_last_good');
+    const gridStatus = lastGoodNgcp || {
+      level: "normal",
+      title: "Luzon Grid — Status Unknown",
+      subtitle: "NGCP live status unavailable. Grid status unconfirmed.",
+      color: "#6b6a65",
+      bg: "#f0efe9",
+      border: "rgba(0,0,0,.1)",
+      alert_times: []
+    };
+    if (lastGoodNgcp) console.log("[power] NGCP using last-known-good cached data");
+    result = {
+      grid_status: gridStatus,
+      interruptions: meralcoData.interruptions,
+      last_updated: today,
+      sources: lastGoodNgcp
+        ? ['company.meralco.com.ph (direct)', 'ngcp.ph (last known good)']
+        : ['company.meralco.com.ph (direct)']
+    };
+    source = lastGoodNgcp ? "direct+last_good" : "direct";
   }
 
   // Case 3: Meralco scrape failed — fall back to full Gemini power prompt
