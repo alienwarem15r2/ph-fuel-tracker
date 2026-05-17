@@ -502,41 +502,42 @@ async function fetchFFWSData() {
 
 // ── Firecrawl (for NGCP — residential proxies bypass NGCP's IP block) ────────
 const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
-const FC_NGCP_DAILY_LIMIT = 6; // ~every 4 hours = ~180/month, fits 1000-credit plan
+const FC_LIMITS = { ngcp: 6, manilawater: 4 }; // calls/day per source
 
-async function fcDailyCount() {
+async function fcCount(key) {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
-  const n = await kvGet('fc_ngcp:' + date);
+  const n = await kvGet('fc_' + key + ':' + date);
   return n ? parseInt(n) : 0;
 }
 
-async function fcIncrCount() {
+async function fcIncr(key) {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
   await fetch(`${KV_URL}/pipeline`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify([
-      ['INCR', KV_PFX + 'fc_ngcp:' + date],
-      ['EXPIRE', KV_PFX + 'fc_ngcp:' + date, 90000]
+      ['INCR', KV_PFX + 'fc_' + key + ':' + date],
+      ['EXPIRE', KV_PFX + 'fc_' + key + ':' + date, 90000]
     ])
   });
 }
 
-async function firecrawlScrape(url) {
+async function firecrawlScrape(url, key) {
   if (!FIRECRAWL_KEY) throw new Error('No FIRECRAWL_API_KEY');
-  const count = await fcDailyCount();
-  if (count >= FC_NGCP_DAILY_LIMIT) throw new Error(`Firecrawl NGCP daily limit reached (${count}/${FC_NGCP_DAILY_LIMIT})`);
+  const limit = FC_LIMITS[key] || 4;
+  const count = await fcCount(key);
+  if (count >= limit) throw new Error(`Firecrawl ${key} daily limit reached (${count}/${limit})`);
   const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
     method: 'POST',
     headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, formats: ['html'], onlyMainContent: false }),
     signal: AbortSignal.timeout(30000)
   });
-  await fcIncrCount();
+  await fcIncr(key);
   if (!res.ok) throw new Error(`Firecrawl HTTP ${res.status}`);
   const data = await res.json();
   if (!data.success) throw new Error('Firecrawl failed: ' + (data.error || 'unknown'));
-  console.log(`[fc] NGCP scraped (${count + 1}/${FC_NGCP_DAILY_LIMIT} today)`);
+  console.log(`[fc] ${key} scraped (${count + 1}/${limit} today)`);
   return data.data?.html || '';
 }
 
@@ -577,7 +578,7 @@ async function scrapePower() {
   // Firecrawl uses residential proxies that can bypass the block. Capped at 6/day.
   if (!ngcpData && FIRECRAWL_KEY) {
     try {
-      const html = await firecrawlScrape('https://www.ngcp.ph/');
+      const html = await firecrawlScrape('https://www.ngcp.ph/', 'ngcp');
       const grid_status = parseNGCPOutlook(html);
       ngcpData = { grid_status };
       console.log('[power] NGCP Firecrawl OK:', grid_status.level, `Luz: ${grid_status.pso?.luzon?.margin}MW margin`);
@@ -667,13 +668,23 @@ async function scrapeWater(browser) {
     console.warn('[water] Maynilad failed:', mayniladResult.reason?.message);
   }
 
-  if (manilaResult.status === 'fulfilled') {
-    interruptions.push(...manilaResult.value);
-    sources.push('manilawater.com (Puppeteer)');
-    console.log(`[water] Manila Water: ${manilaResult.value.length} items`);
-  } else {
-    console.warn('[water] Manila Water failed:', manilaResult.reason?.message);
+  let manilaItems = manilaResult.status === 'fulfilled' ? manilaResult.value : [];
+  if (manilaResult.status === 'rejected') console.warn('[water] Manila Water Puppeteer failed:', manilaResult.reason?.message);
+
+  // Firecrawl fallback — Cloudflare blocks Puppeteer on manilawater.com
+  if (manilaItems.length === 0 && FIRECRAWL_KEY) {
+    try {
+      const html = await firecrawlScrape('https://www.manilawater.com/customers/service-advisories', 'manilawater');
+      manilaItems = parseManilWaterHTML(html);
+      console.log(`[water] Manila Water Firecrawl: ${manilaItems.length} items`);
+    } catch(e) { console.warn('[water] Manila Water Firecrawl failed:', e.message); }
   }
+
+  if (manilaItems.length > 0) {
+    interruptions.push(...manilaItems);
+    sources.push('manilawater.com');
+  }
+  console.log(`[water] Manila Water: ${manilaItems.length} items`);
 
   return { interruptions, last_updated: today, sources, _meta: { source: 'cron', cached_at: new Date().toISOString() } };
 }
