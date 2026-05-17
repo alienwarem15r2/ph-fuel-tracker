@@ -6,7 +6,7 @@ const GROQ_BASE       = "https://api.groq.com/openai/v1";
 const GROQ_CHAT_MODEL = "llama-3.3-70b-versatile";
 
 // ── Cache TTLs (seconds) ──
-const CACHE_TTLS = { fuel: 900, power: 900, water: 7200, waterlevel: 900 };
+const CACHE_TTLS = { fuel: 1800, power: 1800, water: 7200, waterlevel: 1800 };
 
 // ── L1: in-memory per-instance (avoids repeat KV hits within same warm instance) ──
 const apiCache = {
