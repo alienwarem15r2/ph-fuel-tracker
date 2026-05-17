@@ -557,7 +557,28 @@ async function groqSearch(prompt) {
 }
 
 function buildForecastPrompt(today) {
-  return `Today is ${today} Philippines. Search for next week's Philippine fuel price adjustment forecast: will gasoline, diesel, kerosene prices increase or rollback? Include DOE signals, analyst forecasts, and OPEC/Dubai crude oil trends. Return ONLY compact JSON, no markdown:\n{"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"1-2 sentence summary"}}\nValues are signed strings like "+2.00" or "-9.57". Use null if unknown.`;
+  return `Today is ${today} Philippines. Search these Philippine news sites for this week's fuel price adjustment forecast for next week: inquirer.net, gmanetwork.com, philstar.com. Look for articles about "fuel price" OR "oil price adjustment" published in the last 3 days. Extract the actual forecast numbers reported in the article. Return ONLY compact JSON, no markdown:
+{"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"1-2 sentence summary from the article","source_url":null}}
+Rules: Values are signed strings like "+0.85" or "-1.35". Use null for any value not explicitly stated in an article. If no article is found, return all nulls. Do NOT invent or estimate numbers — only report what a news article explicitly states.`;
+}
+
+function validateForecast(f) {
+  if (!f) return null;
+  // Reject if all values are suspiciously round (multiples of 0.50) — sign of hallucination
+  const vals = [f.gasoline, f.diesel, f.kerosene].filter(v => v !== null && v !== undefined);
+  if (vals.length === 0) return null;
+  const parsed = vals.map(v => parseFloat(v)).filter(n => !isNaN(n));
+  const allRound = parsed.length > 0 && parsed.every(n => Math.abs(n * 2) % 1 === 0 && Math.abs(n) >= 1.0);
+  if (allRound && parsed.length >= 2) {
+    console.warn('[fuel] Forecast rejected — suspiciously round numbers:', vals.join(', '));
+    return null;
+  }
+  // Reject if no source URL (Groq should have found a real article)
+  if (!f.source_url) {
+    console.warn('[fuel] Forecast rejected — no source URL (likely hallucinated)');
+    return null;
+  }
+  return f;
 }
 
 // ── Main Scrapers ─────────────────────────────────────────────────────────────
@@ -613,12 +634,14 @@ async function scrapeFuel() {
   const [gwResult, doeResult, forecastResult] = await Promise.allSettled([
     scrapeGasWatch(),
     scrapeDOEOilMonitor(),
-    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { const j = extractJSON(raw); return j.next_week_forecast || null; }).catch(() => null) : Promise.resolve(null)
+    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { const j = extractJSON(raw); return validateForecast(j.next_week_forecast); }).catch(() => null) : Promise.resolve(null)
   ]);
 
   const gwData       = gwResult.status === 'fulfilled' ? gwResult.value : null;
   const doeAdj       = doeResult.status === 'fulfilled' ? doeResult.value : null;
   const forecastData = forecastResult.status === 'fulfilled' ? forecastResult.value : null;
+  if (forecastData) console.log('[fuel] Forecast OK:', forecastData.signal, forecastData.source_url);
+  else console.warn('[fuel] No valid forecast found');
 
   if (!gwData) { console.warn('[fuel] GasWatch failed:', gwResult.reason?.message); }
   if (!doeAdj) console.warn('[fuel] DOE failed:', doeResult.reason?.message);
