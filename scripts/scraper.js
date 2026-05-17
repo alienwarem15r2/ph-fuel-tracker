@@ -634,7 +634,7 @@ async function scrapeFuel() {
   const [gwResult, doeResult, forecastResult] = await Promise.allSettled([
     scrapeGasWatch(),
     scrapeDOEOilMonitor(),
-    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { const j = extractJSON(raw); return validateForecast(j.next_week_forecast); }).catch(() => null) : Promise.resolve(null)
+    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { const j = extractJSON(raw); return validateForecast(j.next_week_forecast); }).catch(e => { console.warn('[fuel] Groq forecast error:', e.message); return null; }) : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
   ]);
 
   const gwData       = gwResult.status === 'fulfilled' ? gwResult.value : null;
