@@ -557,25 +557,32 @@ async function groqSearch(prompt) {
 }
 
 function buildForecastPrompt(today) {
-  return `Today is ${today} Philippines. Search these Philippine news sites for this week's fuel price adjustment forecast for next week: inquirer.net, gmanetwork.com, philstar.com. Look for articles about "fuel price" OR "oil price adjustment" published in the last 3 days. Extract the actual forecast numbers reported in the article. Return ONLY compact JSON, no markdown:
+  const year = today.slice(0, 4);
+  return `Today is ${today} Philippines (year ${year}). Search these Philippine news sites for a fuel price adjustment forecast published in ${year}: inquirer.net, gmanetwork.com, philstar.com. Look for articles titled like "fuel price rollback" or "oil price increase next week" published within the last 7 days in ${year}. Extract the actual forecast numbers reported. Return ONLY compact JSON, no markdown:
 {"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"1-2 sentence summary from the article","source_url":null}}
-Rules: Values are signed strings like "+0.85" or "-1.35". Use null for any value not explicitly stated in an article. If no article is found, return all nulls. Do NOT invent or estimate numbers — only report what a news article explicitly states.`;
+Rules: Values are signed strings like "+0.85" or "-1.35". Use null for any value not explicitly stated. The source_url MUST be from ${year}. If no ${year} article is found, return all nulls with source_url null. Do NOT use articles from previous years. Do NOT invent numbers.`;
 }
 
-function validateForecast(f) {
+function validateForecast(f, today) {
   if (!f) return null;
-  // Reject if all values are suspiciously round (multiples of 0.50) — sign of hallucination
+  const year = today.slice(0, 4);
+  // Reject if no source URL
+  if (!f.source_url) {
+    console.warn('[fuel] Forecast rejected — no source URL');
+    return null;
+  }
+  // Reject if source URL is from a previous year
+  if (!f.source_url.includes(year)) {
+    console.warn('[fuel] Forecast rejected — stale article URL (not from', year + '):', f.source_url);
+    return null;
+  }
+  // Reject if all values are suspiciously round (multiples of 0.50 ≥ 1.0) — sign of hallucination
   const vals = [f.gasoline, f.diesel, f.kerosene].filter(v => v !== null && v !== undefined);
   if (vals.length === 0) return null;
   const parsed = vals.map(v => parseFloat(v)).filter(n => !isNaN(n));
-  const allRound = parsed.length > 0 && parsed.every(n => Math.abs(n * 2) % 1 === 0 && Math.abs(n) >= 1.0);
-  if (allRound && parsed.length >= 2) {
+  const allRound = parsed.length >= 2 && parsed.every(n => Math.abs(n * 2) % 1 === 0 && Math.abs(n) >= 1.0);
+  if (allRound) {
     console.warn('[fuel] Forecast rejected — suspiciously round numbers:', vals.join(', '));
-    return null;
-  }
-  // Reject if no source URL (Groq should have found a real article)
-  if (!f.source_url) {
-    console.warn('[fuel] Forecast rejected — no source URL (likely hallucinated)');
     return null;
   }
   return f;
@@ -634,7 +641,7 @@ async function scrapeFuel() {
   const [gwResult, doeResult, forecastResult] = await Promise.allSettled([
     scrapeGasWatch(),
     scrapeDOEOilMonitor(),
-    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { const j = extractJSON(raw); return validateForecast(j.next_week_forecast); }).catch(e => { console.warn('[fuel] Groq forecast error:', e.message); return null; }) : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
+    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { const j = extractJSON(raw); return validateForecast(j.next_week_forecast, today); }).catch(e => { console.warn('[fuel] Groq forecast error:', e.message); return null; }) : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
   ]);
 
   const gwData       = gwResult.status === 'fulfilled' ? gwResult.value : null;
