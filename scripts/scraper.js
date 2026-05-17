@@ -254,19 +254,21 @@ async function scrapeManilWaterPuppeteer(browser) {
   try {
     await page.setUserAgent(BROWSER_HEADERS['User-Agent']);
     await page.goto('https://www.manilawater.com/customers/service-advisories', { waitUntil: 'networkidle2', timeout: 30000 });
-    // Wait for advisory content to render — React app may be slow to populate tables
+    // Give Next.js RSC hydration time to render DOM after network quiets
+    await new Promise(r => setTimeout(r, 6000));
+    // Then wait up to 15s for advisory content or any table rows
     await page.waitForFunction(
       () => document.body.innerText.toLowerCase().includes('advisory on maintenance') ||
             document.body.innerText.toLowerCase().includes('advisory on emergency') ||
             document.querySelectorAll('table tr').length > 2,
-      { timeout: 25000 }
+      { timeout: 15000 }
     ).catch(() => {});
     const html = await page.content();
     const items = parseManilWaterHTML(html);
-    // Log snippet to help diagnose if parser still returns 0
     if (items.length === 0) {
-      const snippet = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300);
-      console.warn('[water] Manila Water 0 items — page text snippet:', snippet);
+      // Log actual visible text (not raw HTML) to diagnose rendering vs no-advisory
+      const visibleText = await page.evaluate(() => document.body.innerText.slice(0, 600)).catch(() => '(eval failed)');
+      console.warn('[water] Manila Water 0 items — visible text:', visibleText.replace(/\s+/g, ' '));
     }
     return items;
   } finally {
