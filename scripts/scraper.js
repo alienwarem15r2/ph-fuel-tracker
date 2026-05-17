@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer';
 const KV_URL   = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 const KV_PFX   = 'priceph:';
-const TTL      = 1200; // 20 min — buffer beyond 15-min cron interval
+const TTL      = 7200; // 2 hours — GitHub Actions cron can be delayed up to ~1 hour
 
 async function kvSet(key, value) {
   const res = await fetch(`${KV_URL}/pipeline`, {
