@@ -539,12 +539,24 @@ async function scrapePower() {
 Alert level from Luzon margin: <0=red, <600=yellow, >=600=normal. Colors: normal=#1a7a52/bg=#e6f5ed/border=rgba(26,122,82,.2), yellow=#8a5a00/bg=#fef3dc/border=rgba(138,90,0,.2), red=#b83232/bg=#fdeaea/border=rgba(184,50,50,.2).`;
       const raw  = await groqSearch(prompt);
       const json = extractJSON(raw);
-      const title = json.grid_status?.title || '';
-      if (json.grid_status && !title.includes('NNN') && !title.includes('[') && json.grid_status.pso?.luzon?.capacity != null) {
+      const title       = json.grid_status?.title || '';
+      const pso         = json.grid_status?.pso;
+      const asOf        = pso?.as_of || '';
+      const luzCap      = pso?.luzon?.capacity;
+      const visCap      = pso?.visayas?.capacity;
+      const currentYear = new Date().getFullYear().toString();
+
+      const hasPlaceholder = title.includes('NNN') || title.includes('[');
+      const isStaleYear    = asOf && !asOf.includes(currentYear);
+      const isRoundNumbers = luzCap != null && visCap != null && luzCap % 1000 === 0 && visCap % 1000 === 0;
+      const isUnrealistic  = luzCap != null && luzCap < 14000;
+
+      if (json.grid_status && luzCap != null && !hasPlaceholder && !isStaleYear && !isRoundNumbers && !isUnrealistic) {
         ngcpData = json;
-        console.log('[power] NGCP Groq OK:', json.grid_status.level);
+        console.log('[power] NGCP Groq OK:', json.grid_status.level, `Luz: ${luzCap}MW`);
       } else {
-        console.warn('[power] NGCP Groq returned bad/placeholder data');
+        console.warn('[power] NGCP Groq rejected — placeholder:', hasPlaceholder,
+          'stale year:', isStaleYear, 'round numbers:', isRoundNumbers, 'unrealistic:', isUnrealistic);
       }
     } catch(e) { console.warn('[power] NGCP Groq failed:', e.message); }
   }
