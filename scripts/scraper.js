@@ -254,9 +254,21 @@ async function scrapeManilWaterPuppeteer(browser) {
   try {
     await page.setUserAgent(BROWSER_HEADERS['User-Agent']);
     await page.goto('https://www.manilawater.com/customers/service-advisories', { waitUntil: 'networkidle2', timeout: 30000 });
-    await page.waitForSelector('table', { timeout: 15000 }).catch(() => {});
+    // Wait for advisory content to render — React app may be slow to populate tables
+    await page.waitForFunction(
+      () => document.body.innerText.toLowerCase().includes('advisory on maintenance') ||
+            document.body.innerText.toLowerCase().includes('advisory on emergency') ||
+            document.querySelectorAll('table tr').length > 2,
+      { timeout: 25000 }
+    ).catch(() => {});
     const html = await page.content();
-    return parseManilWaterHTML(html);
+    const items = parseManilWaterHTML(html);
+    // Log snippet to help diagnose if parser still returns 0
+    if (items.length === 0) {
+      const snippet = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300);
+      console.warn('[water] Manila Water 0 items — page text snippet:', snippet);
+    }
+    return items;
   } finally {
     await page.close();
   }
@@ -513,11 +525,29 @@ async function scrapePower() {
     fetchMeralcoPages()
   ]);
 
-  const ngcpData    = ngcpResult.status === 'fulfilled' ? { grid_status: ngcpResult.value } : null;
+  let ngcpData      = ngcpResult.status === 'fulfilled' ? { grid_status: ngcpResult.value } : null;
   const meralcoData = meralcoResult.status === 'fulfilled' ? meralcoResult.value : null;
 
-  if (ngcpResult.status === 'rejected')  console.warn('[power] NGCP failed:', ngcpResult.reason?.message);
+  if (ngcpResult.status === 'rejected')    console.warn('[power] NGCP failed:', ngcpResult.reason?.message);
   if (meralcoResult.status === 'rejected') console.warn('[power] Meralco failed:', meralcoResult.reason?.message);
+
+  // Groq web search fallback when direct NGCP fetch fails (GitHub IPs are blocked by NGCP)
+  if (!ngcpData && GROQ_KEY) {
+    try {
+      const prompt = `Visit https://www.ngcp.ph/ and read the Power Situation Outlook table. Return ONLY compact JSON with ACTUAL current MW numbers from the page — do not use placeholders:
+{"grid_status":{"level":"[red|yellow|normal]","title":"Luzon Grid — [status] (+[margin] MW)","subtitle":"[one sentence]","color":"[hex]","bg":"[hex]","border":"[rgba]","alert_times":[],"pso":{"as_of":"[timestamp from table]","luzon":{"capacity":[int],"demand":[int],"margin":[int]},"visayas":{"capacity":[int],"demand":[int],"margin":[int]},"mindanao":{"capacity":[int],"demand":[int],"margin":[int]}}}}
+Alert level from Luzon margin: <0=red, <600=yellow, >=600=normal. Colors: normal=#1a7a52/bg=#e6f5ed/border=rgba(26,122,82,.2), yellow=#8a5a00/bg=#fef3dc/border=rgba(138,90,0,.2), red=#b83232/bg=#fdeaea/border=rgba(184,50,50,.2).`;
+      const raw  = await groqSearch(prompt);
+      const json = extractJSON(raw);
+      const title = json.grid_status?.title || '';
+      if (json.grid_status && !title.includes('NNN') && !title.includes('[') && json.grid_status.pso?.luzon?.capacity != null) {
+        ngcpData = json;
+        console.log('[power] NGCP Groq OK:', json.grid_status.level);
+      } else {
+        console.warn('[power] NGCP Groq returned bad/placeholder data');
+      }
+    } catch(e) { console.warn('[power] NGCP Groq failed:', e.message); }
+  }
 
   // Persist last-known-good NGCP
   if (ngcpData?.grid_status) await kvSet('ngcp_last_good', ngcpData.grid_status).catch(() => {});
