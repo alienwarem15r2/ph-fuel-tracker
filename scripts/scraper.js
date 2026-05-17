@@ -498,6 +498,46 @@ async function fetchFFWSData() {
   return { stations, rainfall, obs_time: wlRaw[0]?.timestr || rfRaw[0]?.timestr || null };
 }
 
+// ── Firecrawl (for NGCP — residential proxies bypass NGCP's IP block) ────────
+const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
+const FC_NGCP_DAILY_LIMIT = 6; // ~every 4 hours = ~180/month, fits 1000-credit plan
+
+async function fcDailyCount() {
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+  const n = await kvGet('fc_ngcp:' + date);
+  return n ? parseInt(n) : 0;
+}
+
+async function fcIncrCount() {
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+  await fetch(`${KV_URL}/pipeline`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify([
+      ['INCR', KV_PFX + 'fc_ngcp:' + date],
+      ['EXPIRE', KV_PFX + 'fc_ngcp:' + date, 90000]
+    ])
+  });
+}
+
+async function firecrawlScrape(url) {
+  if (!FIRECRAWL_KEY) throw new Error('No FIRECRAWL_API_KEY');
+  const count = await fcDailyCount();
+  if (count >= FC_NGCP_DAILY_LIMIT) throw new Error(`Firecrawl NGCP daily limit reached (${count}/${FC_NGCP_DAILY_LIMIT})`);
+  const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, formats: ['html'], onlyMainContent: false }),
+    signal: AbortSignal.timeout(30000)
+  });
+  await fcIncrCount();
+  if (!res.ok) throw new Error(`Firecrawl HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error('Firecrawl failed: ' + (data.error || 'unknown'));
+  console.log(`[fc] NGCP scraped (${count + 1}/${FC_NGCP_DAILY_LIMIT} today)`);
+  return data.data?.html || '';
+}
+
 // ── Groq (for fuel forecast) ──────────────────────────────────────────────────
 const GROQ_KEY = process.env.GROQ_API_KEY;
 
@@ -531,34 +571,15 @@ async function scrapePower() {
   if (ngcpResult.status === 'rejected')    console.warn('[power] NGCP failed:', ngcpResult.reason?.message);
   if (meralcoResult.status === 'rejected') console.warn('[power] Meralco failed:', meralcoResult.reason?.message);
 
-  // Groq web search fallback when direct NGCP fetch fails (GitHub IPs are blocked by NGCP)
-  if (!ngcpData && GROQ_KEY) {
+  // Firecrawl fallback when direct NGCP fetch fails (GitHub IPs blocked by NGCP).
+  // Firecrawl uses residential proxies that can bypass the block. Capped at 6/day.
+  if (!ngcpData && FIRECRAWL_KEY) {
     try {
-      const prompt = `Visit https://www.ngcp.ph/ and read the Power Situation Outlook table. Return ONLY compact JSON with ACTUAL current MW numbers from the page — do not use placeholders:
-{"grid_status":{"level":"[red|yellow|normal]","title":"Luzon Grid — [status] (+[margin] MW)","subtitle":"[one sentence]","color":"[hex]","bg":"[hex]","border":"[rgba]","alert_times":[],"pso":{"as_of":"[timestamp from table]","luzon":{"capacity":[int],"demand":[int],"margin":[int]},"visayas":{"capacity":[int],"demand":[int],"margin":[int]},"mindanao":{"capacity":[int],"demand":[int],"margin":[int]}}}}
-Alert level from Luzon margin: <0=red, <600=yellow, >=600=normal. Colors: normal=#1a7a52/bg=#e6f5ed/border=rgba(26,122,82,.2), yellow=#8a5a00/bg=#fef3dc/border=rgba(138,90,0,.2), red=#b83232/bg=#fdeaea/border=rgba(184,50,50,.2).`;
-      const raw  = await groqSearch(prompt);
-      const json = extractJSON(raw);
-      const title       = json.grid_status?.title || '';
-      const pso         = json.grid_status?.pso;
-      const asOf        = pso?.as_of || '';
-      const luzCap      = pso?.luzon?.capacity;
-      const visCap      = pso?.visayas?.capacity;
-      const currentYear = new Date().getFullYear().toString();
-
-      const hasPlaceholder = title.includes('NNN') || title.includes('[');
-      const isStaleYear    = asOf && !asOf.includes(currentYear);
-      const isRoundNumbers = luzCap != null && visCap != null && luzCap % 1000 === 0 && visCap % 1000 === 0;
-      const isUnrealistic  = luzCap != null && luzCap < 14000;
-
-      if (json.grid_status && luzCap != null && !hasPlaceholder && !isStaleYear && !isRoundNumbers && !isUnrealistic) {
-        ngcpData = json;
-        console.log('[power] NGCP Groq OK:', json.grid_status.level, `Luz: ${luzCap}MW`);
-      } else {
-        console.warn('[power] NGCP Groq rejected — placeholder:', hasPlaceholder,
-          'stale year:', isStaleYear, 'round numbers:', isRoundNumbers, 'unrealistic:', isUnrealistic);
-      }
-    } catch(e) { console.warn('[power] NGCP Groq failed:', e.message); }
+      const html = await firecrawlScrape('https://www.ngcp.ph/');
+      const grid_status = parseNGCPOutlook(html);
+      ngcpData = { grid_status };
+      console.log('[power] NGCP Firecrawl OK:', grid_status.level, `Luz: ${grid_status.pso?.luzon?.margin}MW margin`);
+    } catch(e) { console.warn('[power] NGCP Firecrawl failed:', e.message); }
   }
 
   // Persist last-known-good NGCP
