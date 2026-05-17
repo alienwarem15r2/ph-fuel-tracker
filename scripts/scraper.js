@@ -558,7 +558,7 @@ async function groqSearch(prompt) {
 
 function buildForecastPrompt(today) {
   const year = today.slice(0, 4);
-  return `Today is ${today} Philippines (year ${year}). Search these Philippine news sites for a fuel price adjustment forecast published in ${year}: inquirer.net, gmanetwork.com, philstar.com. Look for articles titled like "fuel price rollback" or "oil price increase next week" published within the last 7 days in ${year}. Extract the actual forecast numbers reported. Return ONLY compact JSON, no markdown:
+  return `Today is ${today} Philippines (year ${year}). Search these Philippine news sites for a fuel price adjustment forecast published in ${year}: inquirer.net, gmanetwork.com, philstar.com. Look for articles titled like "fuel price rollback", "fuel price increase", or "oil price increase next week" published within the last 7 days in ${year}. Extract the actual forecast numbers reported. Return ONLY compact JSON, no markdown:
 {"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"1-2 sentence summary from the article","source_url":null}}
 Rules: Values are signed strings like "+0.85" or "-1.35". Use null for any value not explicitly stated. The source_url MUST be from ${year}. If no ${year} article is found, return all nulls with source_url null. Do NOT use articles from previous years. Do NOT invent numbers.`;
 }
