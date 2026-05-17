@@ -558,9 +558,16 @@ async function groqSearch(prompt) {
 
 function buildForecastPrompt(today) {
   const year = today.slice(0, 4);
-  return `Today is ${today} Philippines (year ${year}). Search these Philippine news sites for a fuel price adjustment forecast published in ${year}: inquirer.net, gmanetwork.com, philstar.com. Look for articles titled like "fuel price rollback", "fuel price increase", or "oil price increase next week" published within the last 7 days in ${year}. Extract the actual forecast numbers reported. Return ONLY compact JSON, no markdown:
-{"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"1-2 sentence summary from the article","source_url":null}}
-Rules: Values are signed strings like "+0.85" or "-1.35". Use null for any value not explicitly stated. The source_url MUST be from ${year}. If no ${year} article is found, return all nulls with source_url null. Do NOT use articles from previous years. Do NOT invent numbers.`;
+  return `Today is ${today} Philippines. Search inquirer.net, gmanetwork.com, and philstar.com for Philippine fuel price adjustment forecast articles published in ${year} within the last 7 days. Look for headlines like "fuel price rollback", "fuel price increase", or "oil price adjustment next week". Report: the article URL, publication date, and the exact gasoline/diesel/kerosene price adjustment amounts mentioned (e.g. gasoline -1.35/L, diesel -0.90/L). If no article from ${year} is found, say so.`;
+}
+
+function buildForecastParsePrompt(searchResult, today) {
+  const year = today.slice(0, 4);
+  return `Extract fuel price forecast data from this text and return ONLY compact JSON, no markdown:
+${searchResult}
+
+JSON format: {"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"1-2 sentence summary","source_url":null}}
+Rules: Values are signed strings like "+0.85" or "-1.35". Use null if not stated. source_url must contain "${year}". If no valid ${year} article data is present, return all nulls.`;
 }
 
 function validateForecast(f, today) {
@@ -641,7 +648,16 @@ async function scrapeFuel() {
   const [gwResult, doeResult, forecastResult] = await Promise.allSettled([
     scrapeGasWatch(),
     scrapeDOEOilMonitor(),
-    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { console.log('[fuel] Groq raw:', raw.slice(0, 500)); const j = extractJSON(raw); console.log('[fuel] Groq parsed:', JSON.stringify(j).slice(0, 300)); return validateForecast(j.next_week_forecast, today); }).catch(e => { console.warn('[fuel] Groq forecast error:', e.message); return null; }) : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
+    GROQ_KEY ? (async () => {
+      try {
+        const searchRaw = await groqSearch(buildForecastPrompt(today));
+        console.log('[fuel] Groq search:', searchRaw.slice(0, 300));
+        if (/no article|not found|couldn't find|no forecast/i.test(searchRaw)) return null;
+        const parseRaw = await groqSearch(buildForecastParsePrompt(searchRaw, today));
+        const j = extractJSON(parseRaw);
+        return validateForecast(j.next_week_forecast, today);
+      } catch(e) { console.warn('[fuel] Groq forecast error:', e.message); return null; }
+    })() : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
   ]);
 
   const gwData       = gwResult.status === 'fulfilled' ? gwResult.value : null;
