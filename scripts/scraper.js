@@ -548,26 +548,24 @@ async function groqSearch(prompt) {
   if (!GROQ_KEY) throw new Error('No GROQ_API_KEY');
   const body = JSON.stringify({ model: 'compound-beta', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] });
   const hdrs = { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' };
-  let r = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: hdrs, body, signal: AbortSignal.timeout(30000) });
+  let r = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: hdrs, body, signal: AbortSignal.timeout(55000) });
   if (r.ok) return (await r.json()).choices?.[0]?.message?.content || '{}';
   // fallback model
-  r = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: hdrs, body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] }), signal: AbortSignal.timeout(30000) });
+  r = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: hdrs, body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] }), signal: AbortSignal.timeout(55000) });
   if (r.ok) return (await r.json()).choices?.[0]?.message?.content || '{}';
   throw new Error(`Groq error: ${r.status}`);
 }
 
 function buildForecastPrompt(today) {
   const year = today.slice(0, 4);
-  return `Today is ${today} Philippines. Search inquirer.net, gmanetwork.com, and philstar.com for Philippine fuel price adjustment forecast articles published in ${year} within the last 7 days. Look for headlines like "fuel price rollback", "fuel price increase", or "oil price adjustment next week". Report: the article URL, publication date, and the exact gasoline/diesel/kerosene price adjustment amounts mentioned (e.g. gasoline -1.35/L, diesel -0.90/L). If no article from ${year} is found, say so.`;
-}
+  return `Today is ${today} Philippines. You MUST use your web search tool to search for Philippine fuel price news from ${year}.
 
-function buildForecastParsePrompt(searchResult, today) {
-  const year = today.slice(0, 4);
-  return `Extract fuel price forecast data from this text and return ONLY compact JSON, no markdown:
-${searchResult}
+Step 1 — Search the web for: site:inquirer.net OR site:gmanetwork.com OR site:philstar.com "fuel price" "${year}" rollback OR increase
+Step 2 — Find the most recent article from ${year} about next week's fuel price adjustment forecast.
+Step 3 — Return ONLY this JSON (no markdown, no explanation):
+{"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"one sentence from the article","source_url":"full article URL here"}}
 
-JSON format: {"next_week_forecast":{"gasoline":null,"diesel":null,"kerosene":null,"lpg":null,"signal":"increase|rollback|mixed|stable","confidence":"confirmed|expected|unknown","note":"1-2 sentence summary","source_url":null}}
-Rules: Values are signed strings like "+0.85" or "-1.35". Use null if not stated. source_url must contain "${year}". If no valid ${year} article data is present, return all nulls.`;
+Values are signed strings like "+0.85" or "-1.35". Only use numbers explicitly stated in a ${year} article. If no ${year} article is found, return all fields as null.`;
 }
 
 function validateForecast(f, today) {
@@ -648,16 +646,7 @@ async function scrapeFuel() {
   const [gwResult, doeResult, forecastResult] = await Promise.allSettled([
     scrapeGasWatch(),
     scrapeDOEOilMonitor(),
-    GROQ_KEY ? (async () => {
-      try {
-        const searchRaw = await groqSearch(buildForecastPrompt(today));
-        console.log('[fuel] Groq search:', searchRaw.slice(0, 300));
-        if (/no article|not found|couldn't find|no forecast/i.test(searchRaw)) return null;
-        const parseRaw = await groqSearch(buildForecastParsePrompt(searchRaw, today));
-        const j = extractJSON(parseRaw);
-        return validateForecast(j.next_week_forecast, today);
-      } catch(e) { console.warn('[fuel] Groq forecast error:', e.message); return null; }
-    })() : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
+    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { console.log('[fuel] Groq raw:', raw.slice(0, 400)); const j = extractJSON(raw); return validateForecast(j.next_week_forecast, today); }).catch(e => { console.warn('[fuel] Groq forecast error:', e.message); return null; }) : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
   ]);
 
   const gwData       = gwResult.status === 'fulfilled' ? gwResult.value : null;
