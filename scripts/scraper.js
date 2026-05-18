@@ -65,7 +65,10 @@ function parseNGCPOutlook(html) {
   const extract = id => { const m = html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`)); return m ? m[1].trim() : null; };
   const pn = s => { const n = parseInt((s||'').replace(/[,\s]/g,''), 10); return isNaN(n) ? null : n; };
   const rawDate = extract('cell-ReportDate') || '';
-  const asOf    = rawDate.replace(/[()]/g,'').replace(/as of /i,'').trim();
+  // Try to grab "as of X:XX PM, Day, Month DD, YYYY" from the table header area
+  const asOfMatch = html.match(/as of\s+([^<\n(]{5,50})/i);
+  const asOf = asOfMatch ? asOfMatch[1].replace(/[()]/g,'').trim()
+                         : rawDate.replace(/[()]/g,'').replace(/as of /i,'').trim();
   const luzCap = pn(extract('cell-LuzonCapacity'));
   const visCap = pn(extract('cell-VisayasCapacity'));
   const minCap = pn(extract('cell-MindanaoCapacity'));
