@@ -539,7 +539,7 @@ async function firecrawlScrape(url, key) {
     method: 'POST',
     headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, formats: ['html'], onlyMainContent: false }),
-    signal: AbortSignal.timeout(30000)
+    signal: AbortSignal.timeout(60000)
   });
   await fcIncr(key);
   if (!res.ok) throw new Error(`Firecrawl HTTP ${res.status}`);
