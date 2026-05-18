@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer';
 const KV_URL   = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 const KV_PFX   = 'priceph:';
-const TTL      = 7200; // 2 hours — GitHub Actions cron can be delayed up to ~1 hour
+const TTL      = 43200; // 12 hours — GitHub Actions free tier can delay cron by 4+ hours
 
 async function kvSet(key, value) {
   const res = await fetch(`${KV_URL}/pipeline`, {
@@ -502,7 +502,7 @@ async function fetchFFWSData() {
 
 // ── Firecrawl (for NGCP — residential proxies bypass NGCP's IP block) ────────
 const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
-const FC_LIMITS = { ngcp: 6, manilawater: 4 }; // calls/day per source
+const FC_LIMITS = { ngcp: 20, manilawater: 8 }; // calls/day — ngcp:~600/mo, mw:~240/mo, total ~840/1000 credits
 
 async function fcCount(key) {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
