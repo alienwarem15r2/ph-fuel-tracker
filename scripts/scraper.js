@@ -72,6 +72,7 @@ function parseNGCPOutlook(html) {
   const tableSection = tableStart !== -1 ? html.slice(tableStart, tableStart + 5000) : html;
   const asOfMatches = [...tableSection.matchAll(/as of\s+([^<\n()]{5,55})/gi)];
   console.log('[ngcp] as-of candidates:', asOfMatches.map(m => m[1].trim()));
+  console.log('[ngcp] table text:', tableSection.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0, 600));
   const asOf = asOfMatches.find(m => m[1].trim() !== reportDateText)?.[1].trim()
                || reportDateText;
   const luzCap = pn(extract('cell-LuzonCapacity'));
