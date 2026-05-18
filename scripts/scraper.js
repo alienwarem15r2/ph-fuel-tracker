@@ -65,16 +65,7 @@ function parseNGCPOutlook(html) {
   const extract = id => { const m = html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`)); return m ? m[1].trim() : null; };
   const pn = s => { const n = parseInt((s||'').replace(/[,\s]/g,''), 10); return isNaN(n) ? null : n; };
   const rawDate = extract('cell-ReportDate') || '';
-  const reportDateText = rawDate.replace(/[()]/g,'').replace(/as of /i,'').trim();
-  // Find all "as of" occurrences in the table — skip cell-ReportDate (publish time),
-  // use the one that differs from it (the visible projection time shown in the header)
-  const tableStart = html.indexOf('table-dailyoutlook');
-  const tableSection = tableStart !== -1 ? html.slice(tableStart, tableStart + 5000) : html;
-  const asOfMatches = [...tableSection.matchAll(/as of\s+([^<\n()]{5,55})/gi)];
-  console.log('[ngcp] as-of candidates:', asOfMatches.map(m => m[1].trim()));
-  console.log('[ngcp] table text:', tableSection.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0, 600));
-  const asOf = asOfMatches.find(m => m[1].trim() !== reportDateText)?.[1].trim()
-               || reportDateText;
+  const asOf = rawDate.replace(/[()]/g,'').replace(/as of /i,'').trim();
   const luzCap = pn(extract('cell-LuzonCapacity'));
   const visCap = pn(extract('cell-VisayasCapacity'));
   const minCap = pn(extract('cell-MindanaoCapacity'));
@@ -531,7 +522,7 @@ async function fcIncr(key) {
   });
 }
 
-async function firecrawlScrape(url, key) {
+async function firecrawlScrape(url, key, extraOpts = {}) {
   if (!FIRECRAWL_KEY) throw new Error('No FIRECRAWL_API_KEY');
   const limit = FC_LIMITS[key] || 4;
   const count = await fcCount(key);
@@ -539,7 +530,7 @@ async function firecrawlScrape(url, key) {
   const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
     method: 'POST',
     headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, formats: ['html'], onlyMainContent: false }),
+    body: JSON.stringify({ url, formats: ['html'], onlyMainContent: false, ...extraOpts }),
     signal: AbortSignal.timeout(60000)
   });
   await fcIncr(key);
@@ -620,7 +611,7 @@ async function scrapePower() {
   // Firecrawl uses residential proxies that can bypass the block. Capped at 6/day.
   if (!ngcpData && FIRECRAWL_KEY) {
     try {
-      const html = await firecrawlScrape('https://www.ngcp.ph/', 'ngcp');
+      const html = await firecrawlScrape('https://www.ngcp.ph/', 'ngcp', { waitFor: 5000 });
       const grid_status = parseNGCPOutlook(html);
       ngcpData = { grid_status };
       console.log('[power] NGCP Firecrawl OK:', grid_status.level, `Luz: ${grid_status.pso?.luzon?.margin}MW margin`);
