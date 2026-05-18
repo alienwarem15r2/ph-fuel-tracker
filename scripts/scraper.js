@@ -65,12 +65,15 @@ function parseNGCPOutlook(html) {
   const extract = id => { const m = html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`)); return m ? m[1].trim() : null; };
   const pn = s => { const n = parseInt((s||'').replace(/[,\s]/g,''), 10); return isNaN(n) ? null : n; };
   const rawDate = extract('cell-ReportDate') || '';
-  // Look for "as of" only within the dailyoutlook table — that's the projection time
+  const reportDateText = rawDate.replace(/[()]/g,'').replace(/as of /i,'').trim();
+  // Find all "as of" occurrences in the table — skip cell-ReportDate (publish time),
+  // use the one that differs from it (the visible projection time shown in the header)
   const tableStart = html.indexOf('table-dailyoutlook');
-  const tableSection = tableStart !== -1 ? html.slice(tableStart, tableStart + 3000) : html;
-  const asOfMatch = tableSection.match(/as of\s+([^<\n()]{5,55})/i);
-  const asOf = asOfMatch ? asOfMatch[1].trim()
-                         : rawDate.replace(/[()]/g,'').replace(/as of /i,'').trim();
+  const tableSection = tableStart !== -1 ? html.slice(tableStart, tableStart + 5000) : html;
+  const asOfMatches = [...tableSection.matchAll(/as of\s+([^<\n()]{5,55})/gi)];
+  console.log('[ngcp] as-of candidates:', asOfMatches.map(m => m[1].trim()));
+  const asOf = asOfMatches.find(m => m[1].trim() !== reportDateText)?.[1].trim()
+               || reportDateText;
   const luzCap = pn(extract('cell-LuzonCapacity'));
   const visCap = pn(extract('cell-VisayasCapacity'));
   const minCap = pn(extract('cell-MindanaoCapacity'));
