@@ -1194,7 +1194,7 @@ function applyLivePowerData(d) {
     gridBadge('pso-header-min', gs.pso.mindanao && gs.pso.mindanao.margin);
 
     var asofEl = document.getElementById('pso-as-of');
-    if (asofEl && gs.pso.as_of) asofEl.textContent = 'NGCP Day Ahead Projection · Published ' + gs.pso.as_of + ' · MW';
+    if (asofEl && gs.pso.as_of) asofEl.textContent = '(as of ' + gs.pso.as_of + ') · MW';
 
     // Hide subtitle when PSO table is shown (table is self-explanatory)
     var subEl = document.getElementById('grid-alert-sub');
