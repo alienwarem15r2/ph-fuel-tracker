@@ -19,8 +19,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: scripts/package.json
 
+      - name: Cache Puppeteer Chrome
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-chrome-${{ runner.os }}
+
       - name: Install dependencies
         run: npm install
+        working-directory: scripts
+
+      - name: Install Chrome for Puppeteer
+        run: npx puppeteer browsers install chrome
         working-directory: scripts
 
       - name: Run scraper
