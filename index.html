@@ -1980,24 +1980,26 @@ function applyLiveWaterLevelData(d) {
         var rf1h  = r.rf1h  != null ? r.rf1h.toFixed(1)  : '0.0';
         var rf30m = r.rf30m != null ? r.rf30m.toFixed(1) : '0.0';
         var rfcur = r.rfcur != null ? r.rfcur.toFixed(1) : null;
-        // Bar and prominent value based on rf1h (current rate)
-        var barPct = Math.min(100, (r.rf1h||0) / 30 * 100).toFixed(1);
-        var barColor = r.intensity === 'extreme' ? '#b83232' : r.intensity === 'heavy' ? '#c85000' : r.intensity === 'moderate' ? '#1a4fa0' : '#1a7a52';
+        // Headline: rfcur if raining now, else rf30m — avoids showing high rf1h when rain has stopped
+        var isRainingNow = r.rfcur != null && r.rfcur > 0;
+        var headline     = isRainingNow ? rfcur : rf30m;
+        var headlineUnit = isRainingNow ? 'mm/hr' : 'mm/30min';
+        var barPct  = Math.min(100, (isRainingNow ? (r.rfcur||0) : (r.rf30m||0)) / 30 * 100).toFixed(1);
+        var barColor = r.intensity === 'extreme' ? '#b83232' : r.intensity === 'heavy' ? '#c85000' : r.intensity === 'moderate' ? '#1a4fa0' : '#2d7a4f';
         return '<div style="background:' + r.bg + ';border:1px solid ' + r.border + ';border-radius:12px;padding:14px 16px;">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
               '<span style="font-size:13px;font-weight:600;">' + r.name + '</span>' +
               (r.intensity !== 'none' ? '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.6);color:' + r.color + ';">' + r.intensityLabel + '</span>' : '') +
             '</div>' +
-            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + r.color + ';">' + rf1h + '<span style="font-size:11px;font-weight:400;color:var(--text3);">mm/hr</span></span>' +
+            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + r.color + ';">' + headline + '<span style="font-size:11px;font-weight:400;color:var(--text3);">' + headlineUnit + '</span></span>' +
           '</div>' +
           '<div style="background:rgba(0,0,0,0.06);border-radius:4px;height:5px;margin-bottom:7px;overflow:hidden;">' +
             '<div style="height:100%;border-radius:4px;width:' + barPct + '%;background:' + barColor + ';transition:width .5s;"></div>' +
           '</div>' +
           '<div style="display:flex;gap:12px;font-size:11px;color:var(--text2);">' +
-            (rfcur !== null ? '<span>Now: <b>' + rfcur + 'mm</b></span>' : '') +
-            '<span>30 min: <b>' + rf30m + 'mm</b></span>' +
-            '<span style="color:var(--text3);">Today: ' + rfday + 'mm</span>' +
+            '<span>1hr: <b>' + rf1h + 'mm</b></span>' +
+            '<span>Today: <b>' + rfday + 'mm</b></span>' +
           '</div>' +
         '</div>';
       };
