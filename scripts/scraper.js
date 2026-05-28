@@ -20,6 +20,16 @@ async function kvSet(key, value) {
   if (!res.ok) throw new Error(`KV set failed: ${res.status}`);
 }
 
+// For last-known-good caches — 48h TTL so they survive overnight even when FC limit is hit
+async function kvSetLong(key, value) {
+  const res = await fetch(`${KV_URL}/pipeline`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify([['SET', KV_PFX + key, JSON.stringify(value), 'EX', 172800]])
+  });
+  if (!res.ok) throw new Error(`KV set failed: ${res.status}`);
+}
+
 async function kvGet(key) {
   const res = await fetch(`${KV_URL}/get/${KV_PFX}${key}`, {
     headers: { Authorization: `Bearer ${KV_TOKEN}` },
@@ -628,8 +638,8 @@ async function scrapePower() {
     }
   }
 
-  // Persist last-known-good NGCP
-  if (ngcpData?.grid_status) await kvSet('ngcp_last_good', ngcpData.grid_status).catch(() => {});
+  // Persist last-known-good NGCP (48h TTL)
+  if (ngcpData?.grid_status) await kvSetLong('ngcp_last_good', ngcpData.grid_status).catch(() => {});
 
   let grid_status = ngcpData?.grid_status;
   if (!grid_status) {
@@ -725,9 +735,25 @@ async function scrapeWater(browser) {
     } catch(e) { console.warn('[water] Manila Water Firecrawl failed:', e.message); }
   }
 
+  // Persist last-known-good Manila Water (48h TTL — survives overnight FC limit resets)
+  if (manilaItems.length > 0) {
+    await kvSetLong('manilawater_last_good', { items: manilaItems, cached_at: new Date().toISOString() }).catch(() => {});
+  }
+
+  // Fall back to last-known-good if both Puppeteer and Firecrawl returned nothing
+  let manilaFromCache = false;
+  if (manilaItems.length === 0) {
+    const mwLastGood = await kvGet('manilawater_last_good').catch(() => null);
+    if (mwLastGood?.items?.length > 0) {
+      manilaItems = mwLastGood.items;
+      manilaFromCache = true;
+      console.log(`[water] Manila Water using last-known-good: ${manilaItems.length} items, cached ${mwLastGood.cached_at}`);
+    }
+  }
+
   if (manilaItems.length > 0) {
     interruptions.push(...manilaItems);
-    sources.push('manilawater.com');
+    sources.push(manilaFromCache ? 'manilawater.com (cached)' : 'manilawater.com');
   }
   console.log(`[water] Manila Water: ${manilaItems.length} items`);
 
