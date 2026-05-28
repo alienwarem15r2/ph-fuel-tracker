@@ -477,9 +477,6 @@ async function fetchFFWSData() {
   const wlRaw = wlRes.ok ? await wlRes.json() : [];
   const rfRaw = rfRes.ok ? await rfRes.json() : [];
 
-  // Debug: log raw fields for first station to confirm field names
-  if (rfRaw.length > 0) console.log('[ffws] rf fields sample:', JSON.stringify(rfRaw[0]));
-
   const stations = wlRaw.map(s => {
     const wl = pfN(s.wl), alertwl = pfN(s.alertwl), alarmwl = pfN(s.alarmwl), criticalwl = pfN(s.criticalwl);
     let level = 'normal', levelLabel = 'Normal', color = '#1a7a52', bg = '#e6f5ed', border = 'rgba(26,122,82,.2)';
@@ -617,12 +614,18 @@ async function scrapePower() {
   // Firecrawl fallback when direct NGCP fetch fails (GitHub IPs blocked by NGCP).
   // Firecrawl uses residential proxies that can bypass the block. Capped at 6/day.
   if (!ngcpData && FIRECRAWL_KEY) {
-    try {
-      const html = await firecrawlScrape('https://www.ngcp.ph/', 'ngcp', { waitFor: 5000 });
-      const grid_status = parseNGCPOutlook(html);
-      ngcpData = { grid_status };
-      console.log('[power] NGCP Firecrawl OK:', grid_status.level, `Luz: ${grid_status.pso?.luzon?.margin}MW margin`);
-    } catch(e) { console.warn('[power] NGCP Firecrawl failed:', e.message); }
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const html = await firecrawlScrape('https://www.ngcp.ph/', 'ngcp', { waitFor: 5000 });
+        const grid_status = parseNGCPOutlook(html);
+        ngcpData = { grid_status };
+        console.log('[power] NGCP Firecrawl OK:', grid_status.level, `Luz: ${grid_status.pso?.luzon?.margin}MW margin`);
+        break;
+      } catch(e) {
+        console.warn(`[power] NGCP Firecrawl attempt ${attempt} failed:`, e.message);
+        if (attempt < 2) await new Promise(r => setTimeout(r, 3000));
+      }
+    }
   }
 
   // Persist last-known-good NGCP
