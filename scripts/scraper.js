@@ -487,8 +487,9 @@ async function fetchFFWSData() {
 
   const rainfall = rfRaw.map(s => {
     const rfday = pfN(s.rfday), rf1h = pfN(s.rf01h), rf3h = pfN(s.rf03h), rf30m = pfN(s.rf30m), rfcur = pfN(s.rf ?? s.rfcurrent ?? s.rf10m);
-    // Intensity based on 1hr rate (PAGASA standard) — not 24hr total
-    const rate = rf1h ?? 0;
+    // Intensity based on current reading if available, else 30min — reflects NOW not past hour
+    // rfcur=null means field not in API; rfcur=0 means explicitly not raining now
+    const rate = rfcur !== null ? rfcur : (rf30m ?? 0);
     let intensity = 'none', intensityLabel = 'No Rain', color = '#9e9d97', bg = 'var(--surface)', border = 'var(--border)';
     if (rate > 0) {
       if      (rate >= 30)  { intensity='extreme';  intensityLabel='Extreme';  color='#b83232'; bg='#fdeaea'; border='rgba(184,50,50,.2)'; }
