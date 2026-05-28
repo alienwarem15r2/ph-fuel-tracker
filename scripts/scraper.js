@@ -486,7 +486,7 @@ async function fetchFFWSData() {
   }).filter(s => s.name && s.wl != null);
 
   const rainfall = rfRaw.map(s => {
-    const rfday = pfN(s.rfday), rf1h = pfN(s.rf01h), rf3h = pfN(s.rf03h), rf30m = pfN(s.rf30m);
+    const rfday = pfN(s.rfday), rf1h = pfN(s.rf01h), rf3h = pfN(s.rf03h), rf30m = pfN(s.rf30m), rfcur = pfN(s.rf ?? s.rfcurrent ?? s.rf10m);
     // Intensity based on 1hr rate (PAGASA standard) — not 24hr total
     const rate = rf1h ?? 0;
     let intensity = 'none', intensityLabel = 'No Rain', color = '#9e9d97', bg = 'var(--surface)', border = 'var(--border)';
@@ -496,7 +496,7 @@ async function fetchFFWSData() {
       else if (rate >= 7.5) { intensity='moderate'; intensityLabel='Moderate'; color='#1a4fa0'; bg='#e8effe'; border='rgba(26,79,160,.2)'; }
       else                  { intensity='light';    intensityLabel='Light';    color='#1a7a52'; bg='#e6f5ed'; border='rgba(26,122,82,.2)'; }
     }
-    return { name: s.obsnm, rfday, rf1h, rf3h, rf30m, time: s.timestr, intensity, intensityLabel, color, bg, border };
+    return { name: s.obsnm, rfday, rf1h, rf3h, rf30m, rfcur, time: s.timestr, intensity, intensityLabel, color, bg, border };
   }).filter(s => s.name && s.rfday != null);
 
   return { stations, rainfall, obs_time: wlRaw[0]?.timestr || rfRaw[0]?.timestr || null };
