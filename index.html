@@ -1978,7 +1978,8 @@ function applyLiveWaterLevelData(d) {
       var rfCardHtml = function(r) {
         var rfday = r.rfday != null ? r.rfday.toFixed(1) : '0.0';
         var rf1h  = r.rf1h  != null ? r.rf1h.toFixed(1)  : '0.0';
-        var rf3h  = r.rf3h  != null ? r.rf3h.toFixed(1)  : '0.0';
+        var rf30m = r.rf30m != null ? r.rf30m.toFixed(1) : '0.0';
+        var rfcur = r.rfcur != null ? r.rfcur.toFixed(1) : null;
         // Bar and prominent value based on rf1h (current rate)
         var barPct = Math.min(100, (r.rf1h||0) / 30 * 100).toFixed(1);
         var barColor = r.intensity === 'extreme' ? '#b83232' : r.intensity === 'heavy' ? '#c85000' : r.intensity === 'moderate' ? '#1a4fa0' : '#1a7a52';
@@ -1994,7 +1995,8 @@ function applyLiveWaterLevelData(d) {
             '<div style="height:100%;border-radius:4px;width:' + barPct + '%;background:' + barColor + ';transition:width .5s;"></div>' +
           '</div>' +
           '<div style="display:flex;gap:12px;font-size:11px;color:var(--text2);">' +
-            '<span>Past 3h: <b>' + rf3h + 'mm</b></span>' +
+            (rfcur !== null ? '<span>Now: <b>' + rfcur + 'mm</b></span>' : '') +
+            '<span>30 min: <b>' + rf30m + 'mm</b></span>' +
             '<span style="color:var(--text3);">Today: ' + rfday + 'mm</span>' +
           '</div>' +
         '</div>';
