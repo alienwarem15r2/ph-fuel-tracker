@@ -1194,7 +1194,7 @@ function applyLivePowerData(d) {
     gridBadge('pso-header-min', gs.pso.mindanao && gs.pso.mindanao.margin);
 
     var asofEl = document.getElementById('pso-as-of');
-    if (asofEl && gs.pso.as_of) asofEl.textContent = '(as of ' + gs.pso.as_of + ') · MW';
+    if (asofEl && gs.pso.as_of) asofEl.textContent = 'Published ' + gs.pso.as_of + ' · MW';
 
     // Hide subtitle when PSO table is shown (table is self-explanatory)
     var subEl = document.getElementById('grid-alert-sub');
@@ -1965,37 +1965,37 @@ function applyLiveWaterLevelData(d) {
     if (!d.rainfall || d.rainfall.length === 0) {
       rfEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--text3);">No rainfall data available</div>';
     } else {
-      // Sort by rfday descending
-      var rfSorted = d.rainfall.slice().sort(function(a,b){ return (b.rfday||0) - (a.rfday||0); });
-      var activeRf  = rfSorted.filter(function(r){ return r.rfday != null && r.rfday >= 2.5; });
-      var dryRf     = rfSorted.filter(function(r){ return !r.rfday || r.rfday < 2.5; });
-      var maxRf     = rfSorted[0]?.rfday || 0;
+      // Sort by rf1h descending (current activity), fall back to rfday
+      var rfSorted = d.rainfall.slice().sort(function(a,b){ return ((b.rf1h||0) - (a.rf1h||0)) || ((b.rfday||0) - (a.rfday||0)); });
+      var activeRf  = rfSorted.filter(function(r){ return r.rf1h != null && r.rf1h > 0; });
+      var dryRf     = rfSorted.filter(function(r){ return !r.rf1h || r.rf1h === 0; });
+      var maxRf1h   = activeRf[0]?.rf1h || 0;
 
       var rfSummary = activeRf.length > 0
-        ? '<div style="font-size:12px;color:#1a4fa0;font-weight:600;margin-bottom:8px;">🌧 ' + activeRf.length + ' station' + (activeRf.length>1?'s':'')+' with active rainfall · Peak: ' + maxRf.toFixed(1) + 'mm/day</div>'
+        ? '<div style="font-size:12px;color:#1a4fa0;font-weight:600;margin-bottom:8px;">🌧 ' + activeRf.length + ' station' + (activeRf.length>1?'s':'')+' with active rainfall · Peak: ' + maxRf1h.toFixed(1) + 'mm/hr</div>'
         : '<div style="font-size:12px;color:#9e9d97;margin-bottom:8px;">No active rainfall recorded</div>';
 
       var rfCardHtml = function(r) {
         var rfday = r.rfday != null ? r.rfday.toFixed(1) : '0.0';
         var rf1h  = r.rf1h  != null ? r.rf1h.toFixed(1)  : '0.0';
         var rf3h  = r.rf3h  != null ? r.rf3h.toFixed(1)  : '0.0';
-        // Mini bar scaled to 100mm max
-        var barPct = Math.min(100, (r.rfday||0) / 100 * 100).toFixed(1);
+        // Bar and prominent value based on rf1h (current rate)
+        var barPct = Math.min(100, (r.rf1h||0) / 30 * 100).toFixed(1);
         var barColor = r.intensity === 'extreme' ? '#b83232' : r.intensity === 'heavy' ? '#c85000' : r.intensity === 'moderate' ? '#1a4fa0' : '#1a7a52';
         return '<div style="background:' + r.bg + ';border:1px solid ' + r.border + ';border-radius:12px;padding:14px 16px;">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
               '<span style="font-size:13px;font-weight:600;">' + r.name + '</span>' +
-              '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.6);color:' + r.color + ';">' + r.intensityLabel + '</span>' +
+              (r.intensity !== 'none' ? '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,0.6);color:' + r.color + ';">' + r.intensityLabel + '</span>' : '') +
             '</div>' +
-            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + r.color + ';">' + rfday + '<span style="font-size:11px;font-weight:400;color:var(--text3);">mm</span></span>' +
+            '<span style="font-size:16px;font-weight:600;font-family:\'DM Mono\',monospace;color:' + r.color + ';">' + rf1h + '<span style="font-size:11px;font-weight:400;color:var(--text3);">mm/hr</span></span>' +
           '</div>' +
           '<div style="background:rgba(0,0,0,0.06);border-radius:4px;height:5px;margin-bottom:7px;overflow:hidden;">' +
             '<div style="height:100%;border-radius:4px;width:' + barPct + '%;background:' + barColor + ';transition:width .5s;"></div>' +
           '</div>' +
           '<div style="display:flex;gap:12px;font-size:11px;color:var(--text2);">' +
-            '<span>Past 1h: <b>' + rf1h + 'mm</b></span>' +
             '<span>Past 3h: <b>' + rf3h + 'mm</b></span>' +
+            '<span style="color:var(--text3);">Today: ' + rfday + 'mm</span>' +
           '</div>' +
         '</div>';
       };
