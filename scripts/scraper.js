@@ -3,6 +3,7 @@
 // Needs env: KV_REST_API_URL, KV_REST_API_TOKEN, GROQ_API_KEY (optional, for forecast)
 
 import puppeteer from 'puppeteer';
+import { existsSync } from 'fs';
 
 // ── KV ──────────────────────────────────────────────────────────────────────
 const KV_URL   = process.env.KV_REST_API_URL;
@@ -763,7 +764,14 @@ async function main() {
 
   console.log(`[scraper] Starting — ${new Date().toISOString()} (PH: ${phDate()})`);
 
-  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'], headless: true });
+  // On Linux (GitHub Actions), prefer system Chrome to avoid Puppeteer download issues
+  const sysChromes = ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
+  const sysChrome  = sysChromes.find(p => existsSync(p));
+  const browser = await puppeteer.launch({
+    executablePath: sysChrome || undefined,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    headless: true
+  });
 
   try {
     const [powerR, fuelR, waterR, waterLevelR] = await Promise.allSettled([
