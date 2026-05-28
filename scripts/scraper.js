@@ -476,6 +476,9 @@ async function fetchFFWSData() {
   const wlRaw = wlRes.ok ? await wlRes.json() : [];
   const rfRaw = rfRes.ok ? await rfRes.json() : [];
 
+  // Debug: log raw fields for first station to confirm field names
+  if (rfRaw.length > 0) console.log('[ffws] rf fields sample:', JSON.stringify(rfRaw[0]));
+
   const stations = wlRaw.map(s => {
     const wl = pfN(s.wl), alertwl = pfN(s.alertwl), alarmwl = pfN(s.alarmwl), criticalwl = pfN(s.criticalwl);
     let level = 'normal', levelLabel = 'Normal', color = '#1a7a52', bg = '#e6f5ed', border = 'rgba(26,122,82,.2)';
