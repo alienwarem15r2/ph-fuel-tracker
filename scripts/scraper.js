@@ -356,6 +356,38 @@ async function scrapeGasWatch() {
     if (adjDiesel || adjGasoline) break;
   }
 
+  // GasWatch advisory titles sometimes carry multi-week cumulative totals (> ₱5 is a red flag).
+  // Body text reliably holds individual-week values — parse it as a correction.
+  const isCumulative = v => v && Math.abs(parseFloat(v)) > 5;
+  if (isCumulative(adjGasoline) || isCumulative(adjDiesel)) {
+    function bodyExtract(text, kw) {
+      let m = text.match(new RegExp(kw + '[^.]{0,25}(?:rise|increas|hike)[^₱P\\d]{0,10}[₱P]?([\\d.]+)', 'i'));
+      if (m) return '+' + m[1];
+      m = text.match(new RegExp('(?:rise|increas|hike)[^₱P\\d]{0,40}[₱P]?([\\d.]+)\\/(?:liter|L)[^.]{0,40}' + kw, 'i'));
+      if (m) return '+' + m[1];
+      m = text.match(new RegExp(kw + '[^.]{0,25}(?:rollback|decreas|fall|drop|roll)[^₱P\\d]{0,10}[₱P]?([\\d.]+)', 'i'));
+      if (m) return '-' + m[1];
+      m = text.match(new RegExp('(?:rollback|decreas|fall|drop)[^₱P\\d]{0,40}[₱P]?([\\d.]+)\\/(?:liter|L)[^.]{0,40}' + kw, 'i'));
+      if (m) return '-' + m[1];
+      return null;
+    }
+    for (const bm of js.matchAll(/body\s*:\s*["'`]((?:[^"'`\\]|\\.){30,600})["'`]/gi)) {
+      const b = bm[1].replace(/\\n/g, ' ').replace(/\\'/g, "'");
+      if (!/diesel|gasoline/i.test(b)) continue;
+      const bGas  = bodyExtract(b, 'gasoline') || bodyExtract(b, 'unleaded');
+      const bDsl  = bodyExtract(b, 'diesel');
+      const bKero = bodyExtract(b, 'kerosene');
+      if (bGas || bDsl) {
+        if (isCumulative(adjGasoline) && bGas)  adjGasoline = bGas;
+        if (isCumulative(adjDiesel)   && bDsl)  adjDiesel   = bDsl;
+        if (bKero) adjKerosene = bKero;
+        console.log(`[gaswatch] Adj corrected from body text: gas=${adjGasoline}, dsl=${adjDiesel}, kero=${adjKerosene}`);
+        break;
+      }
+    }
+  }
+  console.log(`[gaswatch] Adj: gas=${adjGasoline}, dsl=${adjDiesel}`);
+
   const keroAdj = adjKerosene ? parseFloat(adjKerosene) : 0;
   const r = (v, d) => v > 0 ? Math.round((v + d) * 100) / 100 : 0;
   const kero = (prev, adj) => prev > 50 ? Math.round((prev + adj) * 100) / 100 : 0;
@@ -462,6 +494,9 @@ async function scrapeDOEOilMonitor() {
     const fcData = await firecrawlScrapeData('https://legacy.doe.gov.ph/oil-monitor', 'doeadj', { formats: ['markdown'] });
     text = fcData.markdown || fcData.content || '';
     if (!text || text.length < 100) throw new Error('Firecrawl returned empty content for DOE adj');
+    if (/you have been blocked|enable cookies|cloudflare ray id/i.test(text)) {
+      throw new Error('Cloudflare blocked DOE Oil Monitor');
+    }
     console.log(`[doe-adj] Firecrawl OK (${text.length} chars)`);
   }
 
@@ -651,8 +686,8 @@ function computeCityPrices(stations, refPrices) {
     const v97 = p.premium97 ?? p.ron97 ?? p.super97;
     if (v97 && ok(v97, refR97))        byCity[city].r97.push({ v: v97,           b: bn });
     if (ok(p.diesel,      refDsl))     byCity[city].dsl.push({ v: p.diesel,      b: bn });
-    // Premium Diesel — GasWatch may use 'premium_diesel', 'diesel_plus', or 'dieselplus'
-    const vDp = p.premium_diesel ?? p.diesel_plus ?? p.dieselplus ?? p.premiumDiesel;
+    // Premium Diesel — GasWatch uses 'premiumDiesel' (camelCase confirmed from station key log)
+    const vDp = p.premiumDiesel ?? p.premium_diesel ?? p.diesel_plus ?? p.dieselplus;
     if (vDp && ok(vDp, refDslPlus))   byCity[city].dsl_plus.push({ v: vDp,      b: bn });
   }
   // Remove outliers using IQR method before computing stats
@@ -899,6 +934,13 @@ async function scrapeDoeNCRPrices() {
     return cached;
   }
 
+  // Failure cooldown — if we already hit Cloudflare today, don't burn more FC credits
+  const failKey = 'doe_ncr_fail:' + weekKey;
+  const prevFail = await kvGet(failKey).catch(() => null);
+  if (prevFail) {
+    throw new Error(`DOE PDF blocked by Cloudflare (cooldown active, retry after ${prevFail})`);
+  }
+
   // Try up to 5 Mondays back to find accessible PDF
   let markdown = null;
   for (let w = 0; w < 5; w++) {
@@ -910,7 +952,6 @@ async function scrapeDoeNCRPrices() {
     const url  = `https://prod-cms.doe.gov.ph/documents/d/guest/ncr-price-monitoring-${mm}${dd}${yyyy}-pdf`;
     console.log(`[doe] Trying PDF: ${url}`);
     try {
-      // waitFor + actions let Firecrawl's headless browser complete Cloudflare JS challenge
       const fcData = await firecrawlScrapeData(url, 'doe', {
         formats: ['markdown'],
         waitFor: 6000,
@@ -918,9 +959,15 @@ async function scrapeDoeNCRPrices() {
       });
       const md = fcData.markdown || fcData.content || '';
       console.log(`[doe] FC response keys: ${Object.keys(fcData).join(', ')}, markdown length: ${md.length}`);
-      // Reject Cloudflare block pages — same IP will be blocked for all weeks, stop immediately
+      // Reject Cloudflare block page — cache failure so we don't retry for 6 hours
       if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
-        throw new Error(`Cloudflare block (IP: ${md.match(/reveal\s*([\d.]+)/)?.[1] || 'unknown'})`);
+        const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
+        await fetch(`${KV_URL}/pipeline`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
+        });
+        throw new Error(`Cloudflare block — cooldown set for 6h (${retryAfter})`);
       }
       if (md.length > 300) {
         markdown = md;
@@ -931,6 +978,8 @@ async function scrapeDoeNCRPrices() {
       console.warn(`[doe] PDF response too short (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
     } catch(e) {
       console.warn(`[doe] FC error for ${mm}${dd}${yyyy}: ${e.message}`);
+      // If Cloudflare already set cooldown, stop trying other weeks
+      if (/cooldown/i.test(e.message)) break;
     }
   }
 
