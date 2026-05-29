@@ -714,84 +714,117 @@ const DOE_CITY_NORM = {
 };
 
 function parseDoeMarkdown(text) {
+  // Cleans a single cell value and returns a valid price number or null
   const safeNum = s => {
     if (!s) return null;
-    const n = parseFloat(String(s).replace(/,/g, '').replace(/[^\d.]/g, ''));
+    const str = String(s).trim();
+    if (/^#|^N\/?A/i.test(str) || str === '-' || str === '—') return null;
+    const n = parseFloat(str.replace(/,/g, '').replace(/[^\d.]/g, ''));
     return (isFinite(n) && n > 50 && n < 250) ? Math.round(n * 100) / 100 : null;
+  };
+
+  // Extract all valid price numbers from a string
+  const extractNums = str => {
+    const nums = [];
+    for (const m of String(str).matchAll(/[\d]+\.[\d]+/g)) {
+      const v = safeNum(m[0]);
+      if (v !== null) nums.push(v);
+    }
+    return nums;
   };
 
   const prices = {};
   let currentCity = null;
+  // Column indices detected from header row (for pipe-table mode)
   let colLo = -1, colHi = -1, colCommon = -1;
   let headerParsed = false;
 
-  for (const rawLine of text.split('\n')) {
+  const lines = text.split('\n');
+
+  for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line || /^[\s|:-]+$/.test(line)) continue;
 
-    if (line.includes('|')) {
-      const cells = line.split('|').map(c => c.trim());
+    // ── City name detection (works in both table and plain text) ──────────────
+    // Check the first ~60 chars for any known city name
+    const lineHead = line.slice(0, 80);
+    for (const [raw, norm] of Object.entries(DOE_CITY_NORM)) {
+      if (lineHead.includes(raw)) { currentCity = norm; break; }
+    }
 
-      // Detect header row — look for AREA/PRODUCT keywords
+    // ── Product detection ─────────────────────────────────────────────────────
+    let fuelKey = null;
+    const lineUpper = line.toUpperCase();
+    // Check longer keys first to avoid "DIESEL" matching before "DIESEL PLUS"
+    for (const key of ['DIESEL PLUS', 'RON 100', 'RON 97', 'RON 95', 'RON 91', 'DIESEL', 'KEROSENE']) {
+      if (lineUpper.includes(key)) { fuelKey = DOE_FUEL_MAP[key]; break; }
+    }
+
+    if (!currentCity || !fuelKey) continue;
+
+    let lo = null, hi = null, avg = null;
+
+    if (line.includes('|')) {
+      // ── Pipe-table mode ─────────────────────────────────────────────────────
+      const cells = line.split('|').map(c => c.trim());
+      const n = cells.length;
+
+      // Detect header once to know column positions
       if (!headerParsed && /AREA|PRODUCT/i.test(line)) {
-        let overallSeen = 0;
         cells.forEach((c, i) => {
           const cu = c.toUpperCase();
-          if (cu.includes('OVERALL') || cu.includes('RANGE')) {
-            overallSeen++;
-            if (overallSeen === 1) colLo = i;
-            else if (overallSeen === 2) colHi = i;
-          }
-          if (cu.includes('COMMON')) colCommon = i;
+          if (cu.includes('OVERALL') && colLo === -1) { colLo = i; colHi = i + 1; }
+          if (cu.includes('COMMON') && colCommon === -1) colCommon = i;
         });
-        if (colLo === -1) { colLo = cells.length - 3; colHi = cells.length - 2; }
-        if (colCommon === -1) colCommon = cells.length - 1;
+        if (colLo === -1) { colLo = n - 3; colHi = n - 2; }
+        if (colCommon === -1) colCommon = n - 1;
         headerParsed = true;
-        console.log(`[doe] Header cols: lo=${colLo} hi=${colHi} common=${colCommon} (of ${cells.length})`);
+        console.log(`[doe] Header detected: colLo=${colLo} colHi=${colHi} colCommon=${colCommon} (${n} cols)`);
         continue;
       }
 
-      // City detection from first non-empty cell
-      for (const cell of cells.slice(0, 4)) {
-        const norm = DOE_CITY_NORM[cell];
-        if (norm) { currentCity = norm; break; }
-      }
+      // Strategy 1: use detected column positions
+      if (colLo >= 0 && colLo < n) lo = safeNum(cells[colLo]);
+      if (colHi >= 0 && colHi < n) hi = safeNum(cells[colHi]);
+      if (colCommon >= 0 && colCommon < n) avg = safeNum(cells[colCommon]);
 
-      if (!currentCity) continue;
-
-      // Product detection
-      let fuelKey = null;
-      for (const cell of cells) {
-        fuelKey = DOE_FUEL_MAP[cell.toUpperCase().trim()];
-        if (fuelKey) break;
-      }
-      if (!fuelKey) continue;
-
-      const n = cells.length;
-      let lo = colLo >= 0 && colLo < n ? safeNum(cells[colLo]) : null;
-      let hi = colHi >= 0 && colHi < n ? safeNum(cells[colHi]) : null;
-      let avg = colCommon >= 0 && colCommon < n ? safeNum(cells[colCommon]) : null;
-
-      // Fallback: use last 3 valid numbers from the row
+      // Strategy 2: fallback — last valid prices from the full row
       if (lo === null && hi === null) {
-        const nums = cells.slice(-5).map(safeNum).filter(v => v !== null);
-        if (nums.length >= 2) {
-          lo  = nums.length >= 3 ? nums[nums.length - 3] : null;
-          hi  = nums[nums.length - 2];
-          avg = nums[nums.length - 1];
+        const allNums = cells.map(safeNum).filter(v => v !== null);
+        if (allNums.length >= 2) {
+          // Overall Range Lo is 3rd-from-last, Hi is 2nd-from-last, Common is last
+          // (Common Price is often #N/A so allNums.length may be 2 rather than 3)
+          hi  = allNums[allNums.length - (allNums.length >= 3 ? 2 : 1)];
+          lo  = allNums.length >= 3 ? allNums[allNums.length - 3] : allNums[allNums.length - 2];
+          avg = allNums.length >= 3 ? allNums[allNums.length - 1] : null;
+          // Sanity: lo should be <= hi
+          if (lo !== null && hi !== null && lo > hi) { const tmp = lo; lo = hi; hi = tmp; }
         }
       }
-
-      if (lo === null && hi === null) continue;
-
-      const entry = {};
-      if (lo  !== null) entry.lo  = lo;
-      if (hi  !== null) entry.hi  = hi;
-      if (avg !== null) entry.avg = avg;
-
-      if (!prices[currentCity]) prices[currentCity] = {};
-      prices[currentCity][fuelKey] = entry;
+    } else {
+      // ── Plain-text mode ──────────────────────────────────────────────────────
+      // Strip city name and product name from the line, then get remaining numbers
+      let rest = line;
+      for (const raw of Object.keys(DOE_CITY_NORM)) rest = rest.replace(raw, '');
+      for (const key of Object.keys(DOE_FUEL_MAP)) rest = rest.replace(new RegExp(key, 'i'), '');
+      const nums = extractNums(rest);
+      if (nums.length >= 2) {
+        lo  = nums.length >= 3 ? nums[nums.length - 3] : nums[0];
+        hi  = nums[nums.length - (nums.length >= 2 ? 2 : 1)];
+        avg = nums.length >= 3 ? nums[nums.length - 1] : null;
+        if (lo !== null && hi !== null && lo > hi) { const tmp = lo; lo = hi; hi = tmp; }
+      }
     }
+
+    if (lo === null && hi === null) continue;
+
+    const entry = {};
+    if (lo  !== null) entry.lo  = lo;
+    if (hi  !== null) entry.hi  = hi;
+    if (avg !== null) entry.avg = avg;
+
+    if (!prices[currentCity]) prices[currentCity] = {};
+    prices[currentCity][fuelKey] = entry;
   }
 
   return prices;
@@ -825,11 +858,13 @@ async function scrapeDoeNCRPrices() {
     const url  = `https://prod-cms.doe.gov.ph/documents/d/guest/ncr-price-monitoring-${mm}${dd}${yyyy}-pdf`;
     console.log(`[doe] Trying PDF: ${url}`);
     try {
-      const fcData = await firecrawlScrapeData(url, 'doe', { formats: ['markdown'], parsePDF: true });
+      const fcData = await firecrawlScrapeData(url, 'doe', { formats: ['markdown'] });
       const md = fcData.markdown || fcData.content || '';
-      if (md.length > 500) {
+      console.log(`[doe] FC response keys: ${Object.keys(fcData).join(', ')}, markdown length: ${md.length}`);
+      if (md.length > 300) {
         markdown = md;
         console.log(`[doe] Got markdown (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
+        console.log('[doe] Markdown sample:\n' + md.slice(0, 1200));
         break;
       }
       console.warn(`[doe] PDF response too short (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
@@ -844,7 +879,7 @@ async function scrapeDoeNCRPrices() {
   const cityCount = Object.keys(prices).length;
 
   if (cityCount === 0) {
-    console.warn('[doe] Markdown sample:\n' + markdown.slice(0, 800));
+    console.warn('[doe] Parsing failed — full markdown:\n' + markdown.slice(0, 2000));
     throw new Error('DOE markdown parsing yielded no prices');
   }
 
