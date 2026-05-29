@@ -858,9 +858,18 @@ async function scrapeDoeNCRPrices() {
     const url  = `https://prod-cms.doe.gov.ph/documents/d/guest/ncr-price-monitoring-${mm}${dd}${yyyy}-pdf`;
     console.log(`[doe] Trying PDF: ${url}`);
     try {
-      const fcData = await firecrawlScrapeData(url, 'doe', { formats: ['markdown'] });
+      // waitFor + actions let Firecrawl's headless browser complete Cloudflare JS challenge
+      const fcData = await firecrawlScrapeData(url, 'doe', {
+        formats: ['markdown'],
+        waitFor: 6000,
+        actions: [{ type: 'wait', milliseconds: 5000 }]
+      });
       const md = fcData.markdown || fcData.content || '';
       console.log(`[doe] FC response keys: ${Object.keys(fcData).join(', ')}, markdown length: ${md.length}`);
+      // Reject Cloudflare block pages — same IP will be blocked for all weeks, stop immediately
+      if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
+        throw new Error(`Cloudflare block (IP: ${md.match(/reveal\s*([\d.]+)/)?.[1] || 'unknown'})`);
+      }
       if (md.length > 300) {
         markdown = md;
         console.log(`[doe] Got markdown (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
