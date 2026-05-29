@@ -789,6 +789,7 @@ async function scrapeFuel() {
     doe_adjustment: adj,
     prices: gwData.prices,
     advisories: gwData.advisories || [],
+    city_prices: gwData.city_prices || {},
     next_week_forecast: forecastData,
     trend_context: 'Live GasWatch PH data',
     next_week_signal: forecastData?.signal || null,
