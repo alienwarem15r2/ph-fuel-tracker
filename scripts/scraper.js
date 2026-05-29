@@ -1022,7 +1022,20 @@ async function scrapeDoeNCRPrices() {
   let markdown = null;
 
   for (const url of pdfUrls) {
-    console.log(`[doe] Trying Firecrawl: ${url}`);
+    // Cheap HEAD check before burning a Firecrawl credit.
+    // From GitHub Actions, prod-cms returns 403 (CF-blocked, PDF exists) or 404 (not published).
+    // Only call Firecrawl for 403; skip 404s entirely.
+    let headStatus = 0;
+    try {
+      const hr = await fetch(url, { method: 'HEAD', headers: { 'User-Agent': BROWSER_HEADERS['User-Agent'] }, signal: AbortSignal.timeout(6000) });
+      headStatus = hr.status;
+    } catch(e) { headStatus = 0; }
+
+    if (headStatus === 404) { console.log(`[doe] ${url} → 404, skipping`); continue; }
+    if (headStatus === 200) { console.log(`[doe] ${url} → 200 direct! (unexpected from CI)`); }
+    // 403 or network error: fall through to Firecrawl
+
+    console.log(`[doe] Trying Firecrawl (HEAD=${headStatus}): ${url}`);
     try {
       const fcData = await firecrawlScrapeData(url, 'doe', {
         formats: ['markdown']
@@ -1035,7 +1048,7 @@ async function scrapeDoeNCRPrices() {
           headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
           body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
         });
-        console.warn('[doe] Firecrawl also Cloudflare-blocked, cooldown set 6h');
+        console.warn('[doe] Firecrawl Cloudflare-blocked, cooldown set 6h');
         break;
       }
       if (md.length > 300) {
@@ -1043,6 +1056,7 @@ async function scrapeDoeNCRPrices() {
         console.log(`[doe] Firecrawl OK (${md.length} chars)`);
         break;
       }
+      console.warn(`[doe] Firecrawl returned short content (${md.length} chars) for ${url}`);
     } catch(e) {
       console.warn(`[doe] Firecrawl failed: ${e.message}`);
       if (/cooldown/i.test(e.message)) break;
@@ -1050,15 +1064,15 @@ async function scrapeDoeNCRPrices() {
   }
 
   if (!markdown) {
-    // Cache failure for 6h regardless of reason (Cloudflare, FC limit, etc.)
-    // so the next 15-min cron run skips immediately instead of retrying
-    const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
+    // Cache failure for 24h — once all URLs fail today, don't retry until tomorrow
+    // (prevents burning FC credits every 6h across multiple cron runs)
+    const retryAfter = new Date(Date.now() + 24 * 3600000).toISOString();
     await fetch(`${KV_URL}/pipeline`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
+      body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 86400]])
     }).catch(() => {});
-    throw new Error('Could not fetch DOE PDF via Firecrawl (all 5 Mondays failed)');
+    throw new Error('Could not fetch DOE PDF via Firecrawl (all candidate URLs failed)');
   }
 
   const prices = parseDoeMarkdown(markdown);
