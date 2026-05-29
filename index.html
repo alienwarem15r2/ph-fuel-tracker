@@ -258,8 +258,11 @@
 
     <!-- City-by-city fuel prices -->
     <div class="panel" style="margin-bottom:12px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <div class="panel-title" style="margin:0;">Prices by city</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div class="panel-title" style="margin:0;">Prices by city</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">Cheapest price available per city · Source: GasWatch PH live station data</div>
+        </div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <div style="position:relative;">
             <select id="region-select" onchange="switchRegion(this.value)" style="appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 28px 4px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:var(--text2);font-weight:500;">
@@ -1464,16 +1467,11 @@ function buildCityPriceGrid() {
       var rowColor = isActive ? 'color:var(--text);' : 'color:var(--text3);';
 
       var rangeText;
-      if (!d || (d.lo == null && d.hi == null && d.avg == null)) {
+      if (!d || (d.lo == null && d.avg == null)) {
         rangeText = '<span style="color:var(--text3);opacity:.4;">—</span>';
       } else {
-        var lo = d.lo != null ? d.lo : d.avg;
-        var hi = d.hi != null ? d.hi : d.avg;
-        if (lo === hi) {
-          rangeText = '₱' + lo.toFixed(2);
-        } else {
-          rangeText = '₱' + lo.toFixed(2) + ' – ₱' + hi.toFixed(2);
-        }
+        var cheapest = d.lo != null ? d.lo : d.avg;
+        rangeText = '₱' + cheapest.toFixed(2);
       }
 
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;margin:1px 0;' + rowBg + '">' +

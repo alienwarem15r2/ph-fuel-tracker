@@ -623,24 +623,51 @@ async function scrapeGasWatchCityStations(url) {
 // Each city page has a live STATIONS variable — no staleness issues.
 // NCR + nearby cities mapped to GasWatch slug.
 const GW_CITY_SLUGS = {
-  'Manila':       'manila',
-  'Quezon City':  'quezon-city',
-  'Makati':       'makati',
-  'Pasig':        'pasig',
-  'Taguig':       'taguig',
-  'Paranaque':    'paranaque',
-  'Las Pinas':    'las-pinas',
-  'Mandaluyong':  'mandaluyong',
-  'Caloocan':     'caloocan',
-  'Malabon':      'malabon',
-  'Navotas':      'navotas',
-  'Valenzuela':   'valenzuela',
-  'Pasay':        'pasay',
-  'Pateros':      'pateros',
-  'San Juan':     'san-juan',
-  'Marikina':     'marikina',
-  'Muntinlupa':   'muntinlupa',
-  'Antipolo':     'antipolo',
+  // NCR
+  'Manila':                    'manila',
+  'Quezon City':               'quezon-city',
+  'Makati':                    'makati',
+  'Pasig':                     'pasig',
+  'Taguig':                    'taguig',
+  'Paranaque':                 'paranaque',
+  'Las Pinas':                 'las-pinas',
+  'Mandaluyong':               'mandaluyong',
+  'Caloocan':                  'caloocan',
+  'Malabon':                   'malabon',
+  'Navotas':                   'navotas',
+  'Valenzuela':                'valenzuela',
+  'Pasay':                     'pasay',
+  'Pateros':                   'pateros',
+  'San Juan':                  'san-juan',
+  'Marikina':                  'marikina',
+  'Muntinlupa':                'muntinlupa',
+  // Rizal
+  'Antipolo':                  'antipolo',
+  'Cainta':                    'cainta',
+  'Taytay':                    'taytay',
+  'San Mateo':                 'san-mateo',
+  'Rodriguez':                 'rodriguez',
+  'Angono':                    'angono',
+  'Binangonan':                'binangonan',
+  'Tanay':                     'tanay',
+  // Cavite
+  'Bacoor':                    'bacoor',
+  'Dasmarinas':                'dasmarinas',
+  'General Trias':             'general-trias',
+  'Imus':                      'imus',
+  'Silang':                    'silang',
+  'Tagaytay':                  'tagaytay',
+  'Tanza':                     'tanza',
+  'Carmona':                   'carmona',
+  'Kawit':                     'kawit',
+  'General Mariano Alvarez':   'general-mariano-alvarez',
+  // Laguna
+  'San Pedro':                 'san-pedro',
+  'Calamba':                   'calamba',
+  'Cabuyao':                   'cabuyao',
+  'Binan':                     'binan',
+  'Santa Rosa':                'santa-rosa',
+  'Los Banos':                 'los-banos',
 };
 
 // Shared IQR outlier filter
@@ -697,7 +724,7 @@ function aggregateCityStations(stations, cityName) {
 
 // Fetch all city pages in parallel (batches of 5), cache result in KV for 12 h
 async function scrapeGasWatchCityPrices() {
-  const cacheKey = 'gw_city_prices';
+  const cacheKey = 'gw_city_prices:v2'; // bumped to force refresh after adding Cavite/Rizal/Laguna
   try {
     const cached = await kvGet(cacheKey);
     if (cached && Object.keys(cached).length > 5) {
