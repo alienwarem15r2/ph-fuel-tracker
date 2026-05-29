@@ -988,9 +988,11 @@ function applyLiveFuelData(d) {
           for (var cc in CITY_PRICES) {
             var cp = CITY_PRICES[cc], bp = CITY_PRICES_BASELINE[cc];
             if (!bp) continue;
-            if (cp.r91) { cp.r91.avg = Math.round((bp.r91.avg + cpDelta91) * 100) / 100; cp.r91.lo = Math.round((bp.r91.lo + cpDelta91) * 100) / 100; cp.r91.hi = Math.round((bp.r91.hi + cpDelta91) * 100) / 100; }
-            if (cp.r95) { cp.r95.avg = Math.round((bp.r95.avg + cpDelta91) * 100) / 100; cp.r95.lo = Math.round((bp.r95.lo + cpDelta91) * 100) / 100; cp.r95.hi = Math.round((bp.r95.hi + cpDelta91) * 100) / 100; }
-            if (cp.dsl && cpDeltaDsl !== 0) { cp.dsl.avg = Math.round((bp.dsl.avg + cpDeltaDsl) * 100) / 100; cp.dsl.lo = Math.round((bp.dsl.lo + cpDeltaDsl) * 100) / 100; cp.dsl.hi = Math.round((bp.dsl.hi + cpDeltaDsl) * 100) / 100; }
+            if (cp.r91)      { cp.r91.avg      = Math.round((bp.r91.avg      + cpDelta91)  * 100) / 100; cp.r91.lo      = Math.round((bp.r91.lo      + cpDelta91)  * 100) / 100; cp.r91.hi      = Math.round((bp.r91.hi      + cpDelta91)  * 100) / 100; }
+            if (cp.r95)      { cp.r95.avg      = Math.round((bp.r95.avg      + cpDelta91)  * 100) / 100; cp.r95.lo      = Math.round((bp.r95.lo      + cpDelta91)  * 100) / 100; cp.r95.hi      = Math.round((bp.r95.hi      + cpDelta91)  * 100) / 100; }
+            if (cp.r97)      { cp.r97.avg      = Math.round((bp.r97.avg      + cpDelta91)  * 100) / 100; cp.r97.lo      = Math.round((bp.r97.lo      + cpDelta91)  * 100) / 100; cp.r97.hi      = Math.round((bp.r97.hi      + cpDelta91)  * 100) / 100; }
+            if (cp.dsl      && cpDeltaDsl !== 0) { cp.dsl.avg      = Math.round((bp.dsl.avg      + cpDeltaDsl) * 100) / 100; cp.dsl.lo      = Math.round((bp.dsl.lo      + cpDeltaDsl) * 100) / 100; cp.dsl.hi      = Math.round((bp.dsl.hi      + cpDeltaDsl) * 100) / 100; }
+            if (cp.dsl_plus && cpDeltaDsl !== 0) { cp.dsl_plus.avg = Math.round((bp.dsl_plus.avg + cpDeltaDsl) * 100) / 100; cp.dsl_plus.lo = Math.round((bp.dsl_plus.lo + cpDeltaDsl) * 100) / 100; cp.dsl_plus.hi = Math.round((bp.dsl_plus.hi + cpDeltaDsl) * 100) / 100; }
           }
         }
       }

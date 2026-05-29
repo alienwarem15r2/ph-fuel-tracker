@@ -298,7 +298,8 @@ function extractBlock(src, startIdx) {
   }
   return null;
 }
-function grabNum(src, key) { const m = src.match(new RegExp(key + '\\s*:\\s*([0-9]+\\.?[0-9]*)')); return m ? parseFloat(m[1]) : 0; }
+// grabNum: use negative lookbehind so 'diesel' does NOT match inside 'premiumDiesel' etc.
+function grabNum(src, key) { const m = src.match(new RegExp('(?<![a-zA-Z])' + key + '\\s*:\\s*([0-9]+\\.?[0-9]*)')); return m ? parseFloat(m[1]) : 0; }
 function getBrandBlockIn(src, name) { const idx = src.toLowerCase().indexOf(name.toLowerCase() + ':'); if (idx === -1) return null; const bs = src.indexOf('{', idx); return bs === -1 ? null : extractBlock(src, bs); }
 
 async function scrapeGasWatch() {
@@ -313,13 +314,15 @@ async function scrapeGasWatch() {
   if (!brandsBlock) throw new Error('brands block not found');
   const getBB = name => { const idx = brandsBlock.toLowerCase().indexOf(name.toLowerCase() + ':'); if (idx === -1) return null; const bs = brandsBlock.indexOf('{', idx); return bs === -1 ? null : extractBlock(brandsBlock, bs); };
   const petronB = getBB('petron'), shellB = getBB('shell'), unioilB = getBB('unioil');
-  const petronUnleaded  = petronB ? grabNum(petronB, 'unleaded')  : 0;
-  const petronPremium95 = petronB ? grabNum(petronB, 'premium95') : 0;
-  const petronDiesel    = petronB ? grabNum(petronB, 'diesel')    : 0;
-  const shellUnleaded   = shellB  ? grabNum(shellB,  'unleaded')  : 0;
-  const shellDiesel     = shellB  ? grabNum(shellB,  'diesel')    : 0;
-  const unioilUnleaded  = unioilB ? grabNum(unioilB, 'unleaded')  : 0;
-  const unioilDiesel    = unioilB ? grabNum(unioilB, 'diesel')    : 0;
+  const petronUnleaded    = petronB ? grabNum(petronB, 'unleaded')      : 0;
+  const petronPremium95   = petronB ? grabNum(petronB, 'premium95')     : 0;
+  const petronDiesel      = petronB ? grabNum(petronB, 'diesel')        : 0;
+  const petronDieselPlus  = petronB ? grabNum(petronB, 'premiumDiesel') : 0;
+  const shellUnleaded     = shellB  ? grabNum(shellB,  'unleaded')      : 0;
+  const shellDiesel       = shellB  ? grabNum(shellB,  'diesel')        : 0;
+  const unioilUnleaded    = unioilB ? grabNum(unioilB, 'unleaded')      : 0;
+  const unioilDiesel      = unioilB ? grabNum(unioilB, 'diesel')        : 0;
+  console.log(`[gaswatch] Ref prices from PRICE_HISTORY: petronUnleaded=${petronUnleaded}, petronDiesel=${petronDiesel}, petronDieselPlus=${petronDieselPlus}, petronPremium95=${petronPremium95}`);
   if (petronUnleaded < 50 || petronUnleaded > 200) throw new Error('Unrealistic petron price: ' + petronUnleaded);
 
   // Previous prices for kerosene computation
@@ -411,7 +414,12 @@ async function scrapeGasWatch() {
     // eslint-disable-next-line no-new-func
     const stations = new Function('return ' + gsArrBlock)();
     if (Array.isArray(stations) && stations.length > 10) {
-      const refPrices = { r91: petronUnleaded, r95: petronPremium95 || petronUnleaded + 3.5, dsl: petronDiesel };
+      const refPrices = {
+        r91:      petronUnleaded,
+        r95:      petronPremium95 || petronUnleaded + 3.5,
+        dsl:      petronDiesel,
+        dsl_plus: petronDieselPlus || (petronDiesel > 0 ? petronDiesel + 5 : 0)
+      };
       cityPrices = computeCityPrices(stations, refPrices);
       // Store Petron station avg as reference — lets frontend correct for weekly lag
       // (GAS_STATIONS may be from previous week; PRICE_HISTORY is always current week)
@@ -432,7 +440,12 @@ async function scrapeGasWatch() {
   try {
     const antipoloStations = await scrapeGasWatchCityStations('https://gaswatchph.com/antipolo');
     if (Array.isArray(antipoloStations) && antipoloStations.length > 0) {
-      const refPrices = { r91: petronUnleaded, r95: petronPremium95 || petronUnleaded + 3.5, dsl: petronDiesel };
+      const refPrices = {
+        r91:      petronUnleaded,
+        r95:      petronPremium95 || petronUnleaded + 3.5,
+        dsl:      petronDiesel,
+        dsl_plus: petronDieselPlus || (petronDiesel > 0 ? petronDiesel + 5 : 0)
+      };
       const antipoloCities = computeCityPrices(antipoloStations, refPrices);
       Object.assign(cityPrices, antipoloCities);
       console.log(`[gaswatch] Antipolo: ${antipoloStations.length} stations`);
@@ -669,12 +682,14 @@ function computeCityPrices(stations, refPrices) {
   // while keeping legitimate inter-city variation. Falls back to loose range if no reference.
   const WIN = 18;
   const ok = (v, ref) => ref > 0 ? (v >= ref - WIN && v <= ref + WIN) : (v > 50 && v < 300);
-  const refR91     = refPrices?.r91  || 0;
-  const refR95     = refPrices?.r95  || 0;
-  const refDsl     = refPrices?.dsl  || 0;
-  // Derive approximate refs for premium fuels (no separate reference price scraped)
+  const refR91     = refPrices?.r91      || 0;
+  const refR95     = refPrices?.r95      || 0;
+  const refDsl     = refPrices?.dsl      || 0;
+  // Use actual Petron premiumDiesel from PRICE_HISTORY if available — avoids stale GAS_STATIONS values
+  const refDslPlus = refPrices?.dsl_plus > 0 ? refPrices.dsl_plus : (refDsl > 0 ? refDsl + 5 : 0);
+  // RON 97 reference (approx +5 over 95 — no separate PRICE_HISTORY key available)
   const refR97     = refR95  > 0 ? refR95  + 5  : 0;
-  const refDslPlus = refDsl  > 0 ? refDsl  + 5  : 0;
+  console.log(`[computeCity] refR91=${refR91}, refR95=${refR95}, refDsl=${refDsl}, refDslPlus=${refDslPlus}, refR97=${refR97}`);
 
   const byCity = {};
   let _loggedKeys = false;
