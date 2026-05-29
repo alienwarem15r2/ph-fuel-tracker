@@ -1407,6 +1407,11 @@ function buildCityPriceGrid() {
     return true;
   });
 
+  if (cities.length === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:24px 0;color:var(--text3);font-size:13px;">City prices are being collected — check back in a few minutes.</div>';
+    return;
+  }
+
   var avg = liveData.fuel && liveData.fuel.prices && liveData.fuel.prices.petron
     ? (activeCityFuel === 'r91' ? liveData.fuel.prices.petron.ron91 : activeCityFuel === 'r95' ? liveData.fuel.prices.petron.ron95 : liveData.fuel.prices.petron.diesel_std)
     : NCR_AVG[activeCityFuel];

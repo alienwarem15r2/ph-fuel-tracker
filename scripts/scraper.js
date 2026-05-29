@@ -360,12 +360,17 @@ async function scrapeGasWatch() {
   const kero = (prev, adj) => prev > 50 ? Math.round((prev + adj) * 100) / 100 : 0;
 
   // ── Per-city prices from GAS_STATIONS ──────────────────────────────────────
-  // GAS_STATIONS is a JS array (unquoted keys) — use Function() to evaluate it.
-  // This is safe: we own the fetch source (gaswatchph.com) and run server-side only.
+  // GAS_STATIONS uses unquoted JS object keys — extract just the array block and eval.
+  // Only the array literal is passed to Function(), not the entire data.js file.
   let cityPrices = {};
   try {
+    const gsMatch = js.match(/var\s+GAS_STATIONS\s*=\s*\[/);
+    if (!gsMatch) throw new Error('GAS_STATIONS declaration not found');
+    const gsArrStart = js.indexOf('[', gsMatch.index);
+    const gsArrBlock = extractBlock(js, gsArrStart);
+    if (!gsArrBlock) throw new Error('Could not extract GAS_STATIONS array block');
     // eslint-disable-next-line no-new-func
-    const stations = new Function(js + '\nreturn typeof GAS_STATIONS!=="undefined"?GAS_STATIONS:[];')();
+    const stations = new Function('return ' + gsArrBlock)();
     if (Array.isArray(stations) && stations.length > 10) {
       cityPrices = computeCityPrices(stations);
       // Store Petron station avg as reference — lets frontend correct for weekly lag
