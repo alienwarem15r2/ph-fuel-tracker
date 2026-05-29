@@ -19,20 +19,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: scripts/package.json
 
-      - name: Install Chromium system dependencies
+      - name: Install Google Chrome
         run: |
-          sudo apt-get install -y \
-            libgbm-dev libatk1.0-0 libatk-bridge2.0-0 \
-            libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
-            libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 \
-            libcairo2 libnss3 libasound2t64
+          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i google-chrome-stable_current_amd64.deb
+          sudo apt-get install -f -y
+          google-chrome --version
 
       - name: Install dependencies
         run: npm install
-        working-directory: scripts
-
-      - name: Install Chromium for Puppeteer
-        run: npx puppeteer browsers install chrome
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: true
         working-directory: scripts
 
       - name: Run scraper

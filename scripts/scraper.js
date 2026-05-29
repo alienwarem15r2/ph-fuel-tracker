@@ -963,8 +963,15 @@ function parseDoeMarkdown(text) {
 // Launch a real Chromium browser (with Stealth plugin) to pass Cloudflare,
 // then download the PDF and extract its text using pdf-parse.
 async function fetchDoeWithPuppeteer(pdfUrl) {
+  const sysChromes = [
+    '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser', '/usr/bin/chromium'
+  ];
+  const executablePath = sysChromes.find(p => existsSync(p));
+  console.log(`[doe-puppet] Using Chrome: ${executablePath || 'puppeteer default'}`);
   const browser = await puppeteerExtra.launch({
     headless: true,
+    executablePath: executablePath || undefined,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
   });
   try {
