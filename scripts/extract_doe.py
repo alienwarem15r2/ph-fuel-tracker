@@ -76,6 +76,9 @@ def safe_float(val):
     if val is None:
         return None
     s = str(val).strip().replace(",", "").replace("−", "-")
+    # Treat #N/A and other non-numeric markers as missing
+    if s in ("", "#N/A", "#n/a", "N/A", "N.A.", "-", "—", "#VALUE!"):
+        return None
     try:
         v = float(s)
         return v if 50 < v < 250 else None
@@ -86,26 +89,62 @@ def safe_float(val):
 def extract_prices(pdf_path):
     prices = {}
     current_city = None
+    header_found = False   # persists across pages
+    range_lo_col = None    # detected from header row
+    range_hi_col = None
+    common_col   = None
+
+    BRAND_COLS = [
+        (2,  "Petron"),
+        (4,  "Shell"),
+        (6,  "Caltex"),
+        (8,  "Phoenix"),
+        (10, "Total"),
+        (12, "Flying V"),
+        (14, "Unioil"),
+        (16, "Seaoil"),
+        (18, "PTT"),
+        (20, "Independent"),
+    ]
 
     with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
+        print(f"[DOE] PDF has {len(pdf.pages)} page(s)")
+        for page_num, page in enumerate(pdf.pages):
             table = page.extract_table()
             if not table:
+                print(f"[DOE] Page {page_num+1}: no table found")
                 continue
+            ncols = len(table[0]) if table else 0
+            print(f"[DOE] Page {page_num+1}: {len(table)} rows × {ncols} cols")
 
-            header_found = False
             for row in table:
                 if not row:
                     continue
 
-                # Locate the header row
-                if not header_found:
-                    flat = " ".join(str(c) for c in row if c).upper()
-                    if "AREA" in flat and "PRODUCT" in flat:
+                # Detect header row (first occurrence or repeated on page 2)
+                flat = " ".join(str(c) for c in row if c).upper()
+                if "AREA" in flat and "PRODUCT" in flat:
+                    if not header_found:
+                        # First header — detect OVERALL RANGE and COMMON PRICE columns
+                        for i, cell in enumerate(row):
+                            cs = str(cell).upper() if cell else ""
+                            if "OVERALL" in cs and range_lo_col is None:
+                                range_lo_col = i
+                                range_hi_col = i + 1
+                            if "COMMON" in cs:
+                                common_col = i
+                        # Fallback: last 3 columns
+                        if range_lo_col is None:
+                            n = len(row)
+                            range_lo_col, range_hi_col, common_col = n-3, n-2, n-1
+                        print(f"[DOE] Columns: range_lo={range_lo_col} range_hi={range_hi_col} common={common_col}")
                         header_found = True
+                    continue  # skip header row (including repeated ones on page 2)
+
+                if not header_found:
                     continue
 
-                # Track current city (col 0)
+                # Track current city from col 0
                 if row[0] and str(row[0]).strip():
                     raw = str(row[0]).strip()
                     current_city = CITY_NORM.get(raw, raw)
@@ -113,58 +152,38 @@ def extract_prices(pdf_path):
                 if not current_city:
                     continue
 
-                # Product (col 1)
+                # Product from col 1
                 product = str(row[1]).strip().upper() if row[1] else ""
                 fuel_key = FUEL_MAP.get(product)
                 if not fuel_key:
                     continue
 
-                # Collect all numeric values in the row (cols 2 onward)
-                nums = [safe_float(c) for c in row[2:]]
-                valid = [v for v in nums if v is not None]
-                if not valid:
-                    continue
+                n = len(row)
 
-                # Last non-None numeric = COMMON PRICE
-                # Second-to-last = OVERALL RANGE hi
-                # Third-to-last  = OVERALL RANGE lo
-                # (works because COMMON PRICE is always rightmost numeric column)
-                rev = list(reversed([safe_float(c) for c in row]))
-                common = next((v for v in rev if v is not None), None)
-                range_hi = next((v for v in rev[1:] if v is not None), None)
-                range_lo = next((v for v in rev[2:] if v is not None), None)
+                # OVERALL RANGE and COMMON PRICE using detected column indices
+                range_lo = safe_float(row[range_lo_col]) if range_lo_col < n else None
+                range_hi = safe_float(row[range_hi_col]) if range_hi_col < n else None
+                common   = safe_float(row[common_col])   if common_col   < n else None
 
-                # Find brand with the lowest price (cheapest)
-                cheapest_brand = None
-                brand_cols = [
-                    (2,  3,  "Petron"),
-                    (4,  5,  "Shell"),
-                    (6,  7,  "Caltex"),
-                    (8,  9,  "Phoenix"),
-                    (10, 11, "Total"),
-                    (12, 13, "Flying V"),
-                    (14, 15, "Unioil"),
-                    (16, 17, "Seaoil"),
-                    (18, 19, "PTT"),
-                    (20, 21, "Independent"),
-                ]
-                best = None
-                for lo_i, hi_i, brand in brand_cols:
-                    v = safe_float(row[lo_i]) if lo_i < len(row) else None
+                if range_lo is None and range_hi is None:
+                    continue  # no usable range data for this row
+
+                # Cheapest brand = lowest lo price across brand columns
+                best, cheapest_brand = None, None
+                for col_i, brand in BRAND_COLS:
+                    v = safe_float(row[col_i]) if col_i < n else None
                     if v is not None and (best is None or v < best):
-                        best = v
-                        cheapest_brand = brand
+                        best, cheapest_brand = v, brand
 
                 entry = {}
                 if range_lo is not None: entry["lo"]       = round(range_lo, 2)
                 if range_hi is not None: entry["hi"]       = round(range_hi, 2)
-                if common   is not None: entry["avg"]      = round(common, 2)
+                if common   is not None: entry["avg"]      = round(common,   2)
                 if cheapest_brand:       entry["cheapest"] = cheapest_brand
 
-                if entry:
-                    if current_city not in prices:
-                        prices[current_city] = {}
-                    prices[current_city][fuel_key] = entry
+                if current_city not in prices:
+                    prices[current_city] = {}
+                prices[current_city][fuel_key] = entry
 
     return prices
 
