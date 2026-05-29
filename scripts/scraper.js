@@ -313,12 +313,13 @@ async function scrapeGasWatch() {
   if (!brandsBlock) throw new Error('brands block not found');
   const getBB = name => { const idx = brandsBlock.toLowerCase().indexOf(name.toLowerCase() + ':'); if (idx === -1) return null; const bs = brandsBlock.indexOf('{', idx); return bs === -1 ? null : extractBlock(brandsBlock, bs); };
   const petronB = getBB('petron'), shellB = getBB('shell'), unioilB = getBB('unioil');
-  const petronUnleaded = petronB ? grabNum(petronB, 'unleaded') : 0;
-  const petronDiesel   = petronB ? grabNum(petronB, 'diesel')   : 0;
-  const shellUnleaded  = shellB  ? grabNum(shellB,  'unleaded') : 0;
-  const shellDiesel    = shellB  ? grabNum(shellB,  'diesel')   : 0;
-  const unioilUnleaded = unioilB ? grabNum(unioilB, 'unleaded') : 0;
-  const unioilDiesel   = unioilB ? grabNum(unioilB, 'diesel')   : 0;
+  const petronUnleaded  = petronB ? grabNum(petronB, 'unleaded')  : 0;
+  const petronPremium95 = petronB ? grabNum(petronB, 'premium95') : 0;
+  const petronDiesel    = petronB ? grabNum(petronB, 'diesel')    : 0;
+  const shellUnleaded   = shellB  ? grabNum(shellB,  'unleaded')  : 0;
+  const shellDiesel     = shellB  ? grabNum(shellB,  'diesel')    : 0;
+  const unioilUnleaded  = unioilB ? grabNum(unioilB, 'unleaded')  : 0;
+  const unioilDiesel    = unioilB ? grabNum(unioilB, 'diesel')    : 0;
   if (petronUnleaded < 50 || petronUnleaded > 200) throw new Error('Unrealistic petron price: ' + petronUnleaded);
 
   // Previous prices for kerosene computation
@@ -372,7 +373,8 @@ async function scrapeGasWatch() {
     // eslint-disable-next-line no-new-func
     const stations = new Function('return ' + gsArrBlock)();
     if (Array.isArray(stations) && stations.length > 10) {
-      cityPrices = computeCityPrices(stations);
+      const refPrices = { r91: petronUnleaded, r95: petronPremium95 || petronUnleaded + 3.5, dsl: petronDiesel };
+      cityPrices = computeCityPrices(stations, refPrices);
       // Store Petron station avg as reference — lets frontend correct for weekly lag
       // (GAS_STATIONS may be from previous week; PRICE_HISTORY is always current week)
       const p91 = stations.filter(s => s.brand === 'petron' && s.prices?.unleaded > 50);
@@ -392,7 +394,8 @@ async function scrapeGasWatch() {
   try {
     const antipoloStations = await scrapeGasWatchCityStations('https://gaswatchph.com/antipolo');
     if (Array.isArray(antipoloStations) && antipoloStations.length > 0) {
-      const antipoloCities = computeCityPrices(antipoloStations);
+      const refPrices = { r91: petronUnleaded, r95: petronPremium95 || petronUnleaded + 3.5, dsl: petronDiesel };
+      const antipoloCities = computeCityPrices(antipoloStations, refPrices);
       Object.assign(cityPrices, antipoloCities);
       console.log(`[gaswatch] Antipolo: ${antipoloStations.length} stations`);
     }
@@ -570,7 +573,7 @@ async function scrapeGasWatchCityStations(url) {
   return new Function('return ' + arrBlock + ';')();
 }
 
-function computeCityPrices(stations) {
+function computeCityPrices(stations, refPrices) {
   const NORM   = {
     'Parañaque': 'Paranaque', 'Las Piñas': 'Las Pinas',
     'Dasmariñas': 'Dasmarinas', 'Biñan': 'Binan', 'Los Baños': 'Los Banos',
@@ -581,6 +584,14 @@ function computeCityPrices(stations) {
     seaoil: 'Seaoil', phoenix: 'Phoenix', unioil: 'Unioil', cleanfuel: 'Cleanfuel',
     total: 'Total', jetti: 'Jetti', busline: 'Busline'
   };
+  // Allow ±₱18 from national reference price — filters stale community data (e.g. 2022 spike prices)
+  // while keeping legitimate inter-city variation. Falls back to loose range if no reference.
+  const WIN = 18;
+  const ok = (v, ref) => ref > 0 ? (v >= ref - WIN && v <= ref + WIN) : (v > 50 && v < 300);
+  const refR91 = refPrices?.r91 || 0;
+  const refR95 = refPrices?.r95 || 0;
+  const refDsl = refPrices?.dsl || 0;
+
   const byCity = {};
   for (const s of stations) {
     if (!s.area || !s.prices) continue;
@@ -588,9 +599,9 @@ function computeCityPrices(stations) {
     if (!byCity[city]) byCity[city] = { r91: [], r95: [], dsl: [] };
     const bn = BRANDS[s.brand] || s.brand || '?';
     const p = s.prices;
-    if (p.unleaded  > 50 && p.unleaded  < 300) byCity[city].r91.push({ v: p.unleaded,  b: bn });
-    if (p.premium95 > 50 && p.premium95 < 300) byCity[city].r95.push({ v: p.premium95, b: bn });
-    if (p.diesel    > 50 && p.diesel    < 300) byCity[city].dsl.push({ v: p.diesel,    b: bn });
+    if (ok(p.unleaded,  refR91)) byCity[city].r91.push({ v: p.unleaded,  b: bn });
+    if (ok(p.premium95, refR95)) byCity[city].r95.push({ v: p.premium95, b: bn });
+    if (ok(p.diesel,    refDsl)) byCity[city].dsl.push({ v: p.diesel,    b: bn });
   }
   // Remove outliers using IQR method before computing stats
   function iqrFilter(items) {
