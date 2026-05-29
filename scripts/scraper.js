@@ -441,26 +441,66 @@ async function scrapeGasWatch() {
 
 // ── DOE Scraper ───────────────────────────────────────────────────────────────
 async function scrapeDOEOilMonitor() {
-  const html = await fetchHtml('https://legacy.doe.gov.ph/oil-monitor', 8000);
-  const text = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
-  const dateMatch = text.match(/Oil Monitor as of (\d+\s+\w+\s+\d{4})/i);
+  // Cache for 24h — DOE Oil Monitor only updates once a week (Tuesdays)
+  const cacheKey = 'doe_adj:' + phDate();
+  const cached = await kvGet(cacheKey).catch(() => null);
+  if (cached && (cached.gasoline_ron91_95 || cached.diesel_std)) {
+    console.log('[doe-adj] Cache hit:', cached.note);
+    return cached;
+  }
+
+  let text = null;
+  // Try direct fetch first (free); fall back to Firecrawl if blocked
+  try {
+    const html = await fetchHtml('https://legacy.doe.gov.ph/oil-monitor', 8000);
+    text = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
+               .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+    if (text.length < 200 || /403|forbidden/i.test(text)) throw new Error('Blocked or empty');
+    console.log('[doe-adj] Direct fetch OK');
+  } catch(e) {
+    console.log(`[doe-adj] Direct blocked (${e.message}), using Firecrawl…`);
+    const fcData = await firecrawlScrapeData('https://legacy.doe.gov.ph/oil-monitor', 'doeadj', { formats: ['markdown'] });
+    text = fcData.markdown || fcData.content || '';
+    if (!text || text.length < 100) throw new Error('Firecrawl returned empty content for DOE adj');
+    console.log(`[doe-adj] Firecrawl OK (${text.length} chars)`);
+  }
+
+  const dateMatch = text.match(/Oil Monitor as of (\d+\s+\w+\s+\d{4})/i)
+                 || text.match(/effective\s+(\w+\s+\d+,?\s+\d{4})/i)
+                 || text.match(/(\w+\s+\d+,?\s+2026)/i);
+
   function parseAdj(keyword) {
-    let m = text.match(new RegExp(keyword + '[^.\\d]{0,30}P([\\d.]+)[^.\\d]{0,30}(increase|decrease|rollback|reduction)', 'i'));
+    // "gasoline ... P1.60 ... increase"
+    let m = text.match(new RegExp(keyword + '[^.\\d]{0,30}[₱P]([\\d.]+)[^.\\d]{0,30}(increase|decrease|rollback|reduction)', 'i'));
     if (m) return (/(decrease|rollback|reduction)/i.test(m[2]) ? '-' : '+') + m[1];
-    m = text.match(new RegExp('(increase|decrease|rollback)[^.\\d]{0,40}P([\\d.]+)\\/liter[^.]{0,60}' + keyword, 'i'));
+    // "increase ... P1.60/liter ... gasoline"
+    m = text.match(new RegExp('(increase|decrease|rollback)[^.\\d]{0,40}[₱P]([\\d.]+)\\/liter[^.]{0,60}' + keyword, 'i'));
     if (m) return (/(decrease|rollback)/i.test(m[1]) ? '-' : '+') + m[2];
-    m = text.match(new RegExp(keyword + '[^.]{0,120}(increased|decreased|rollback)[^.\\d]{0,15}P([\\d.]+)', 'i'));
+    // "gasoline ... increased ... P1.60"
+    m = text.match(new RegExp(keyword + '[^.]{0,120}(increased|decreased|rollback)[^.\\d]{0,15}[₱P]([\\d.]+)', 'i'));
     if (m) return (/(decreased|rollback)/i.test(m[1]) ? '-' : '+') + m[2];
+    // Markdown list format: "Gasoline: +₱1.60" or "- Gasoline +1.60/L"
+    m = text.match(new RegExp(keyword + '\\s*:?\\s*([+\\-−])\\s*[₱P]?\\s*([\\d.]+)', 'i'));
+    if (m) return (m[1] === '+' ? '+' : '-') + m[2];
     return null;
   }
+
   const adj = {
     gasoline_ron91_95: parseAdj('gasoline') || parseAdj('unleaded'),
-    diesel_std: parseAdj('diesel'),
-    kerosene: parseAdj('kerosene'),
-    lpg_per_kg: parseAdj('lpg'),
+    diesel_std:        parseAdj('diesel'),
+    kerosene:          parseAdj('kerosene'),
+    lpg_per_kg:        parseAdj('lpg'),
     note: dateMatch ? `DOE Oil Monitor as of ${dateMatch[1]}` : 'DOE Oil Monitor'
   };
+  console.log(`[doe-adj] Parsed: gas=${adj.gasoline_ron91_95}, dsl=${adj.diesel_std}, note=${adj.note}`);
   if (!adj.gasoline_ron91_95 && !adj.diesel_std && !adj.kerosene) throw new Error('No adj data from DOE');
+
+  // Cache 24 hours
+  await fetch(`${KV_URL}/pipeline`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify([['SET', KV_PFX + cacheKey, JSON.stringify(adj), 'EX', 86400]])
+  });
   return adj;
 }
 
@@ -652,7 +692,7 @@ function computeCityPrices(stations, refPrices) {
 
 // ── Firecrawl (for NGCP — residential proxies bypass NGCP's IP block) ────────
 const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
-const FC_LIMITS = { ngcp: 20, manilawater: 8, doe: 4 }; // ngcp:~600/mo, mw:~240/mo, doe:~4/mo (weekly cache), total ~844/1000 credits
+const FC_LIMITS = { ngcp: 20, manilawater: 8, doe: 4, doeadj: 4 }; // ngcp:~600/mo, mw:~240/mo, doe:~4/mo, doeadj:~60/mo (24h cache), total ~864/1000 credits
 
 async function fcCount(key) {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
