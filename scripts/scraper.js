@@ -409,6 +409,30 @@ async function scrapeGasWatch() {
   // Results are KV-cached for 12 h so we only hit GasWatch twice per day.
   const cityPrices = await scrapeGasWatchCityPrices();
 
+  // Cross-validate city prices against the main weekly reference (±15%).
+  // GasWatch stations can carry stale entries from prior weeks that still pass
+  // the 50–130 range check but are obviously wrong vs. the current national price.
+  if (cityPrices && petronUnleaded > 50 && petronDiesel > 50) {
+    const refs = {
+      r91:      petronUnleaded,
+      r95:      petronUnleaded + 3.10,
+      r97:      petronUnleaded + 6.64,
+      dsl:      petronDiesel,
+      dsl_plus: petronDiesel + 4.25
+    };
+    for (const [city, c] of Object.entries(cityPrices)) {
+      for (const [type, data] of Object.entries(c)) {
+        const ref = refs[type];
+        if (!ref || !data?.avg) continue;
+        if (Math.abs(data.avg - ref) > ref * 0.15) {
+          console.warn(`[gw-cities] Dropping ${city} ${type}: avg=₱${data.avg}, ref=₱${ref.toFixed(2)} (>15% diff — stale)`);
+          delete c[type];
+        }
+      }
+      if (Object.keys(c).length === 0) delete cityPrices[city];
+    }
+  }
+
   // Advisories
   const advisories = [];
   try {
@@ -727,7 +751,7 @@ function aggregateCityStations(stations, cityName) {
 
 // Fetch all city pages in parallel (batches of 5), cache result in KV for 12 h
 async function scrapeGasWatchCityPrices() {
-  const cacheKey = 'gw_city_prices:v2'; // bumped to force refresh after adding Cavite/Rizal/Laguna
+  const cacheKey = 'gw_city_prices:v3'; // bumped to force refresh after adding stale-price filter
   try {
     const cached = await kvGet(cacheKey);
     if (cached && Object.keys(cached).length > 5) {
