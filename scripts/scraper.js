@@ -4,7 +4,6 @@
 
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { existsSync } from 'fs';
 
 puppeteerExtra.use(StealthPlugin());
@@ -960,104 +959,6 @@ function parseDoeMarkdown(text) {
   return prices;
 }
 
-// Launch a real Chromium browser (with Stealth plugin) to pass Cloudflare,
-// then download the PDF and extract its text using pdf-parse.
-async function fetchDoeWithPuppeteer(pdfUrl) {
-  const sysChromes = [
-    '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome',
-    '/usr/bin/chromium-browser', '/usr/bin/chromium'
-  ];
-  const executablePath = sysChromes.find(p => existsSync(p));
-  console.log(`[doe-puppet] Using Chrome: ${executablePath || 'puppeteer default'}`);
-
-  const browser = await puppeteerExtra.launch({
-    headless: true,
-    executablePath: executablePath || undefined,
-    args: [
-      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-      '--disable-gpu', '--disable-blink-features=AutomationControlled',
-      '--window-size=1920,1080'
-    ]
-  });
-
-  try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
-
-    // Intercept the PDF binary directly — avoids Chrome's built-in PDF viewer
-    // which would prevent response.buffer() from working.
-    let pdfBuffer = null;
-    await page.setRequestInterception(true);
-    page.on('request', req => {
-      // Block images/fonts to speed up challenge page load
-      if (['image', 'font', 'media'].includes(req.resourceType())) req.abort();
-      else req.continue();
-    });
-    page.on('response', async res => {
-      const ct = res.headers()['content-type'] || '';
-      if (/pdf|octet/i.test(ct) && res.ok()) {
-        try { pdfBuffer = await res.buffer(); } catch(_) {}
-      }
-    });
-
-    // Navigate directly to PDF — Cloudflare challenge fires here
-    console.log(`[doe-puppet] Navigating directly to PDF: ${pdfUrl}`);
-    const response = await page.goto(pdfUrl, { waitUntil: 'networkidle2', timeout: 50000 })
-      .catch(e => { console.warn(`[doe-puppet] goto warning: ${e.message}`); return null; });
-
-    // If CF challenge page, wait up to 30 s for it to auto-resolve & redirect
-    const title = await page.title().catch(() => '');
-    console.log(`[doe-puppet] Page title: "${title}"`);
-    if (/just a moment|cloudflare|attention required/i.test(title)) {
-      console.log('[doe-puppet] CF challenge — waiting 30 s for auto-resolve…');
-      await page.waitForFunction(
-        () => !document.title.toLowerCase().includes('just a moment'),
-        { timeout: 30000, polling: 1000 }
-      ).catch(() => {});
-      console.log(`[doe-puppet] Post-wait title: "${await page.title().catch(() => '')}"`);
-    }
-
-    // Check if PDF was intercepted during navigation/redirect
-    if (pdfBuffer && pdfBuffer.length > 1000) {
-      console.log(`[doe-puppet] PDF intercepted: ${pdfBuffer.length} bytes`);
-      const parsed = await pdfParse(pdfBuffer);
-      console.log(`[doe-puppet] Parsed: ${parsed.text.length} chars, ${parsed.numpages} pages`);
-      return parsed.text;
-    }
-
-    // If not intercepted, try fetching with the clearance cookies
-    const cookies = await page.cookies();
-    const hasCF   = cookies.some(c => c.name === 'cf_clearance');
-    console.log(`[doe-puppet] Cookies after wait: ${cookies.length} (cf_clearance: ${hasCF})`);
-
-    const ua        = await page.evaluate(() => navigator.userAgent);
-    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-    const resp = await fetch(pdfUrl, {
-      headers: {
-        'User-Agent': ua, 'Cookie': cookieStr,
-        'Referer': new URL(pdfUrl).origin + '/',
-        'Accept': 'application/pdf,*/*'
-      },
-      signal: AbortSignal.timeout(40000)
-    });
-
-    if (!resp.ok) throw new Error(`PDF HTTP ${resp.status}`);
-    const ct = resp.headers.get('content-type') || '';
-    if (!/pdf|octet/i.test(ct)) {
-      const preview = await resp.text();
-      if (/cloudflare|blocked|just a moment/i.test(preview))
-        throw new Error('Still CF-blocked after challenge wait');
-      throw new Error(`Unexpected content-type: ${ct} — ${preview.slice(0, 100)}`);
-    }
-    const buf = Buffer.from(await resp.arrayBuffer());
-    console.log(`[doe-puppet] PDF via cookies: ${buf.length} bytes`);
-    const parsed = await pdfParse(buf);
-    return parsed.text;
-  } finally {
-    await browser.close();
-  }
-}
 
 async function scrapeDoeNCRPrices() {
   // Compute current week's Monday in PH time
@@ -1096,51 +997,33 @@ async function scrapeDoeNCRPrices() {
 
   let markdown = null;
 
-  // ── Try Puppeteer + Stealth first (bypasses Cloudflare with a real browser) ──
   for (const url of pdfUrls) {
-    console.log(`[doe] Trying Puppeteer: ${url}`);
+    console.log(`[doe] Trying Firecrawl: ${url}`);
     try {
-      const pdfText = await fetchDoeWithPuppeteer(url);
-      if (pdfText && pdfText.length > 200) {
-        markdown = pdfText;
-        console.log(`[doe] Puppeteer OK (${pdfText.length} chars). Sample:\n${pdfText.slice(0, 600)}`);
+      const fcData = await firecrawlScrapeData(url, 'doe', {
+        formats: ['markdown'],
+        waitFor: 6000,
+        actions: [{ type: 'wait', milliseconds: 5000 }]
+      });
+      const md = fcData.markdown || fcData.content || '';
+      if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
+        const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
+        await fetch(`${KV_URL}/pipeline`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
+        });
+        console.warn('[doe] Firecrawl also Cloudflare-blocked, cooldown set 6h');
+        break;
+      }
+      if (md.length > 300) {
+        markdown = md;
+        console.log(`[doe] Firecrawl OK (${md.length} chars)`);
         break;
       }
     } catch(e) {
-      console.warn(`[doe] Puppeteer failed for ${url}: ${e.message}`);
-    }
-  }
-
-  // ── Fall back to Firecrawl if Puppeteer didn't work ───────────────────────
-  if (!markdown) {
-    for (const url of pdfUrls) {
-      console.log(`[doe] Trying Firecrawl: ${url}`);
-      try {
-        const fcData = await firecrawlScrapeData(url, 'doe', {
-          formats: ['markdown'],
-          waitFor: 6000,
-          actions: [{ type: 'wait', milliseconds: 5000 }]
-        });
-        const md = fcData.markdown || fcData.content || '';
-        if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
-          const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
-          await fetch(`${KV_URL}/pipeline`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
-          });
-          console.warn('[doe] Firecrawl also Cloudflare-blocked, cooldown set 6h');
-          break;
-        }
-        if (md.length > 300) {
-          markdown = md;
-          console.log(`[doe] Firecrawl OK (${md.length} chars)`);
-          break;
-        }
-      } catch(e) {
-        console.warn(`[doe] Firecrawl failed: ${e.message}`);
-        if (/cooldown/i.test(e.message)) break;
-      }
+      console.warn(`[doe] Firecrawl failed: ${e.message}`);
+      if (/cooldown/i.test(e.message)) break;
     }
   }
 
