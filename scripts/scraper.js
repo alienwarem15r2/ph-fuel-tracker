@@ -364,8 +364,9 @@ async function scrapeGasWatch() {
     // Simple extractor: find keyword then within the same clause (before next comma/period)
     // look for rise/rollback direction and the first price number.
     function bodyExtract(text, kw) {
-      // Grab the clause starting at the keyword up to the next ',' or '.'
-      const clauseM = text.match(new RegExp(kw + '[^,\\.]{0,60}', 'i'));
+      // Grab the clause starting at the keyword up to the next ',' only
+      // (NOT '.') so decimal points like "2.82" stay inside the clause.
+      const clauseM = text.match(new RegExp(kw + '[^,]{0,80}', 'i'));
       if (!clauseM) return null;
       const clause = clauseM[0];
       const numM = clause.match(/(\d+\.\d+)/);
@@ -376,9 +377,11 @@ async function scrapeGasWatch() {
     for (const bm of js.matchAll(/body\s*:\s*["'`]((?:[^"'`\\]|\\.){30,800})["'`]/gi)) {
       const b = bm[1].replace(/\\n/g, ' ').replace(/\\t/g, ' ').replace(/\\'/g, "'");
       if (!/diesel|gasoline/i.test(b)) continue;
+      console.log(`[gaswatch] Body candidate (first 300): ${b.slice(0, 300)}`);
       const bGas  = bodyExtract(b, 'gasoline') || bodyExtract(b, 'unleaded');
       const bDsl  = bodyExtract(b, 'diesel');
       const bKero = bodyExtract(b, 'kerosene');
+      console.log(`[gaswatch] Body extract results: gas=${bGas}, dsl=${bDsl}, kero=${bKero}`);
       if (bGas || bDsl) {
         // Replace only if current value is null or unreasonably large (cumulative)
         if ((!adjGasoline || isCumulative(adjGasoline)) && bGas)  adjGasoline = bGas;
