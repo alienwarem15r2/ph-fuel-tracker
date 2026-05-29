@@ -401,73 +401,10 @@ async function scrapeGasWatch() {
   const r = (v, d) => v > 0 ? Math.round((v + d) * 100) / 100 : 0;
   const kero = (prev, adj) => prev > 50 ? Math.round((prev + adj) * 100) / 100 : 0;
 
-  // ── Per-city prices from GAS_STATIONS ──────────────────────────────────────
-  // GAS_STATIONS uses unquoted JS object keys — extract just the array block and eval.
-  // Only the array literal is passed to Function(), not the entire data.js file.
-  let cityPrices = {};
-  try {
-    const gsMatch = js.match(/(?:var|const|let)\s+GAS_STATIONS\s*=\s*\[|GAS_STATIONS\s*=\s*\[/);
-    if (!gsMatch) throw new Error('GAS_STATIONS declaration not found');
-    const gsArrStart = js.indexOf('[', gsMatch.index);
-    const gsArrBlock = extractBlock(js, gsArrStart);
-    if (!gsArrBlock) throw new Error('Could not extract GAS_STATIONS array block');
-    // eslint-disable-next-line no-new-func
-    const stations = new Function('return ' + gsArrBlock)();
-    if (Array.isArray(stations) && stations.length > 10) {
-      cityPrices = computeCityPrices(stations);
-
-      // ── Staleness-delta correction ───────────────────────────────────────────
-      // GAS_STATIONS may be from a completely different price era (e.g. 2022 spike).
-      // Compute median of Petron station prices from GAS_STATIONS, compare to
-      // PRICE_HISTORY (always current week), and shift ALL city aggregates by that delta.
-      const p91     = stations.filter(s => s.brand === 'petron' && s.prices?.unleaded > 50 && s.prices?.unleaded < 200);
-      const pDsl    = stations.filter(s => s.brand === 'petron' && s.prices?.diesel   > 50 && s.prices?.diesel   < 200);
-      if (p91.length > 0 && pDsl.length > 0) {
-        const med = arr => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)];
-        const staleR91  = med(p91.map(s => s.prices.unleaded));
-        const staleDsl  = med(pDsl.map(s => s.prices.diesel));
-        const deltaR91  = petronUnleaded - staleR91;  // e.g. 87.26 − 85.86 = +1.40
-        const deltaDsl  = petronDiesel   - staleDsl;  // e.g. 84.68 − 101.13 = −16.45
-        console.log(`[gaswatch] Staleness delta: r91=${deltaR91.toFixed(2)} (stale=${staleR91}), dsl=${deltaDsl.toFixed(2)} (stale=${staleDsl})`);
-        const applyD = (fuel, d) => {
-          if (!fuel || Math.abs(d) < 0.01) return;
-          fuel.lo  = Math.round((fuel.lo  + d) * 100) / 100;
-          fuel.hi  = Math.round((fuel.hi  + d) * 100) / 100;
-          fuel.avg = Math.round((fuel.avg + d) * 100) / 100;
-        };
-        for (const [key, data] of Object.entries(cityPrices)) {
-          if (key === '_petron_baseline') continue;
-          applyD(data.r91,      deltaR91);
-          applyD(data.r95,      deltaR91);  // all gasoline types move together
-          applyD(data.r97,      deltaR91);
-          applyD(data.dsl,      deltaDsl);
-          applyD(data.dsl_plus, deltaDsl);
-        }
-        // Set baseline = current petron price so frontend weekly-delta = 0 (already corrected)
-        cityPrices._petron_baseline = petronUnleaded;
-      } else if (p91.length > 0) {
-        cityPrices._petron_baseline = Math.round(
-          p91.reduce((s2, s) => s2 + s.prices.unleaded, 0) / p91.length * 100
-        ) / 100;
-      }
-      console.log(`[gaswatch] City prices: ${Object.keys(cityPrices).length - 1} cities from ${stations.length} stations (baseline: ${cityPrices._petron_baseline})`);
-    }
-  } catch(e) {
-    console.warn('[gaswatch] City prices parse failed:', e.message);
-  }
-
-  // Fetch Antipolo separately — GasWatch city pages embed inline STATIONS variable
-  // Same structure as GAS_STATIONS in data.js; same delta correction applies
-  try {
-    const antipoloStations = await scrapeGasWatchCityStations('https://gaswatchph.com/antipolo');
-    if (Array.isArray(antipoloStations) && antipoloStations.length > 0) {
-      const antipoloCities = computeCityPrices(antipoloStations);
-      Object.assign(cityPrices, antipoloCities);
-      console.log(`[gaswatch] Antipolo: ${antipoloStations.length} stations`);
-    }
-  } catch(e) {
-    console.warn('[gaswatch] Antipolo stations failed:', e.message);
-  }
+  // ── Per-city prices from GasWatch city pages ────────────────────────────────
+  // Each city page embeds a live STATIONS variable — always current-week prices.
+  // Results are KV-cached for 12 h so we only hit GasWatch twice per day.
+  const cityPrices = await scrapeGasWatchCityPrices();
 
   // Advisories
   const advisories = [];
@@ -682,75 +619,122 @@ async function scrapeGasWatchCityStations(url) {
   return new Function('return ' + arrBlock + ';')();
 }
 
-function computeCityPrices(stations) {
-  const NORM   = {
-    'Parañaque': 'Paranaque', 'Las Piñas': 'Las Pinas',
-    'Dasmariñas': 'Dasmarinas', 'Biñan': 'Binan', 'Los Baños': 'Los Banos',
-    'Peñaranda': 'Penaranda', 'Muñoz': 'Munoz'
-  };
+// ── GasWatch city-page scraping ───────────────────────────────────────────────
+// Each city page has a live STATIONS variable — no staleness issues.
+// NCR + nearby cities mapped to GasWatch slug.
+const GW_CITY_SLUGS = {
+  'Manila':       'manila',
+  'Quezon City':  'quezon-city',
+  'Makati':       'makati',
+  'Pasig':        'pasig',
+  'Taguig':       'taguig',
+  'Paranaque':    'paranaque',
+  'Las Pinas':    'las-pinas',
+  'Mandaluyong':  'mandaluyong',
+  'Caloocan':     'caloocan',
+  'Malabon':      'malabon',
+  'Navotas':      'navotas',
+  'Valenzuela':   'valenzuela',
+  'Pasay':        'pasay',
+  'Pateros':      'pateros',
+  'San Juan':     'san-juan',
+  'Marikina':     'marikina',
+  'Muntinlupa':   'muntinlupa',
+  'Antipolo':     'antipolo',
+};
+
+// Shared IQR outlier filter
+function iqrFilter(items) {
+  if (items.length < 4) return items;
+  const sorted = [...items].sort((a, b) => a.v - b.v);
+  const q1 = sorted[Math.floor(sorted.length * 0.25)].v;
+  const q3 = sorted[Math.floor(sorted.length * 0.75)].v;
+  const iqr = Math.max(q3 - q1, 5);
+  const lo = q1 - 1.5 * iqr, hi = q3 + 1.5 * iqr;
+  const f = items.filter(x => x.v >= lo && x.v <= hi);
+  return f.length >= 3 ? f : items;
+}
+
+// Aggregate one city's station list into { r91, r95, r97, dsl, dsl_plus }
+function aggregateCityStations(stations, cityName) {
   const BRANDS = {
     'flying-v': 'Flying V', shell: 'Shell', petron: 'Petron', caltex: 'Caltex',
     seaoil: 'Seaoil', phoenix: 'Phoenix', unioil: 'Unioil', cleanfuel: 'Cleanfuel',
     total: 'Total', jetti: 'Jetti', busline: 'Busline'
   };
-  // GAS_STATIONS data can be significantly outdated (e.g. 2022 price-spike era).
-  // Don't filter by current PRICE_HISTORY reference — we apply a staleness-delta correction
-  // to all city aggregates AFTER this function returns. Only exclude obviously bogus values.
-  const ok = v => v != null && v > 50 && v < 200;
+  // Current-era prices — tight bounds to catch any lingering stale entries
+  const ok = v => v != null && v > 50 && v < 130;
+  const d = { r91: [], r95: [], r97: [], dsl: [], dsl_plus: [] };
 
-  const byCity = {};
-  let _loggedKeys = false;
   for (const s of stations) {
-    if (!s.area || !s.prices) continue;
-    const city = NORM[s.area] || s.area;
-    if (!byCity[city]) byCity[city] = { r91: [], r95: [], r97: [], dsl: [], dsl_plus: [] };
+    if (!s.prices) continue;
     const bn = BRANDS[s.brand] || s.brand || '?';
     const p = s.prices;
-    // Log price keys once to help diagnose missing fuels
-    if (!_loggedKeys) { console.log('[gaswatch] Sample station price keys:', Object.keys(p).join(', ')); _loggedKeys = true; }
-    if (ok(p.unleaded))   byCity[city].r91.push({ v: p.unleaded,  b: bn });
-    if (ok(p.premium95))  byCity[city].r95.push({ v: p.premium95, b: bn });
-    // RON 97 — GasWatch may use 'premium97' or 'ron97'
+    if (ok(p.unleaded))  d.r91.push({ v: p.unleaded,  b: bn });
+    if (ok(p.premium95)) d.r95.push({ v: p.premium95, b: bn });
     const v97 = p.premium97 ?? p.ron97 ?? p.super97;
-    if (ok(v97))          byCity[city].r97.push({ v: v97,         b: bn });
-    if (ok(p.diesel))     byCity[city].dsl.push({ v: p.diesel,    b: bn });
-    // Premium Diesel — GasWatch uses 'premiumDiesel' (camelCase confirmed)
+    if (ok(v97))         d.r97.push({ v: v97,          b: bn });
+    if (ok(p.diesel))    d.dsl.push({ v: p.diesel,     b: bn });
     const vDp = p.premiumDiesel ?? p.premium_diesel ?? p.diesel_plus ?? p.dieselplus;
-    if (ok(vDp))          byCity[city].dsl_plus.push({ v: vDp,    b: bn });
-  }
-  // Remove outliers using IQR method before computing stats
-  function iqrFilter(items) {
-    if (items.length < 4) return items;
-    const sorted = [...items].sort((a, b) => a.v - b.v);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)].v;
-    const q3 = sorted[Math.floor(sorted.length * 0.75)].v;
-    const iqr = Math.max(q3 - q1, 5); // min IQR of ₱5 to avoid zero-width fence
-    const lo = q1 - 1.5 * iqr;
-    const hi = q3 + 1.5 * iqr;
-    const filtered = items.filter(x => x.v >= lo && x.v <= hi);
-    return filtered.length >= 3 ? filtered : items;
+    if (ok(vDp))         d.dsl_plus.push({ v: vDp,     b: bn });
   }
 
-  const out = {};
-  for (const [city, d] of Object.entries(byCity)) {
-    const c = {};
-    for (const t of ['r91', 'r95', 'r97', 'dsl', 'dsl_plus']) {
-      if (!d[t].length) continue;
-      const clean = iqrFilter(d[t]);
-      const vals = clean.map(x => x.v);
-      const lo = Math.min(...vals), hi = Math.max(...vals);
-      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      const chpst = clean.reduce((a, b) => a.v < b.v ? a : b);
-      c[t] = {
-        avg: Math.round(avg * 100) / 100,
-        lo:  Math.round(lo  * 100) / 100,
-        hi:  Math.round(hi  * 100) / 100,
-        cheapest: chpst.b
-      };
-    }
-    if (Object.keys(c).length) out[city] = c;
+  const c = {};
+  for (const [t, items] of Object.entries(d)) {
+    if (!items.length) continue;
+    const clean = iqrFilter(items);
+    const vals  = clean.map(x => x.v);
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    c[t] = {
+      avg:      Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) / 100,
+      lo:       Math.round(lo  * 100) / 100,
+      hi:       Math.round(hi  * 100) / 100,
+      cheapest: clean.reduce((a, b) => a.v < b.v ? a : b).b
+    };
   }
-  return out;
+  return Object.keys(c).length ? { [cityName]: c } : null;
+}
+
+// Fetch all city pages in parallel (batches of 5), cache result in KV for 12 h
+async function scrapeGasWatchCityPrices() {
+  const cacheKey = 'gw_city_prices';
+  try {
+    const cached = await kvGet(cacheKey);
+    if (cached && Object.keys(cached).length > 5) {
+      console.log(`[gw-cities] KV cache hit (${Object.keys(cached).length} cities)`);
+      return cached;
+    }
+  } catch(e) { /* ignore cache miss */ }
+
+  const results = {};
+  const entries = Object.entries(GW_CITY_SLUGS);
+  const BATCH = 5;
+
+  for (let i = 0; i < entries.length; i += BATCH) {
+    const batch = entries.slice(i, i + BATCH);
+    await Promise.allSettled(batch.map(async ([cityName, slug]) => {
+      try {
+        const stations = await scrapeGasWatchCityStations(`https://gaswatchph.com/${slug}`);
+        if (Array.isArray(stations) && stations.length > 0) {
+          const entry = aggregateCityStations(stations, cityName);
+          if (entry) Object.assign(results, entry);
+          console.log(`[gw-cities] ${cityName}: ${stations.length} stations`);
+        }
+      } catch(e) {
+        console.warn(`[gw-cities] ${cityName} (${slug}) failed: ${e.message}`);
+      }
+    }));
+    // Brief pause between batches to avoid overwhelming GasWatch
+    if (i + BATCH < entries.length) await new Promise(r => setTimeout(r, 600));
+  }
+
+  if (Object.keys(results).length > 0) {
+    try { await kvSet(cacheKey, results); } catch(e) { /* non-fatal */ }
+    console.log(`[gw-cities] Fetched ${Object.keys(results).length} cities, cached 12 h`);
+  } else {
+    console.warn('[gw-cities] All city page fetches failed');
+  }
+  return results;
 }
 
 // ── Firecrawl (for NGCP — residential proxies bypass NGCP's IP block) ────────
