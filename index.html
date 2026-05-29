@@ -264,7 +264,9 @@
           <div style="position:relative;">
             <select id="region-select" onchange="switchRegion(this.value)" style="appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 28px 4px 12px;font-size:12px;font-family:inherit;cursor:pointer;color:var(--text2);font-weight:500;">
               <option value="ncr">📍 Metro Manila (NCR)</option>
-              <option value="pampanga">📍 Pampanga</option>
+              <option value="cavite">📍 Cavite</option>
+              <option value="rizal">📍 Rizal</option>
+              <option value="laguna">📍 Laguna</option>
               <option value="all">🗺 All Regions</option>
             </select>
             <svg style="position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;width:11px;height:11px;stroke:var(--text3);fill:none;stroke-width:2;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
@@ -660,7 +662,13 @@ var CITY_PRICES_BASELINE = {};  // deep-copy taken after live data loads, for de
 var NCR_CITIES_LIST = ['Quezon City','Pasig','Manila','Makati','Caloocan','Taguig',
   'Marikina','Antipolo','Mandaluyong','Paranaque','Las Pinas','Muntinlupa','Valenzuela',
   'Malabon','Pasay','Navotas','Pateros','San Juan'];
-var PAMPANGA_CITIES_LIST = ['San Fernando','Angeles City','Mabalacat','Clark (CSEZ)'];
+var CAVITE_CITIES_LIST = ['Bacoor','Dasmarinas','General Trias','Imus','Silang','Kawit',
+  'Tanza','Cavite City','Naic','Trece Martires','Carmona','General Mariano Alvarez',
+  'Tagaytay','Alfonso','Rosario','Noveleta','Indang','Mendez','Amadeo','Maragondon',
+  'Ternate','Magallanes','General Emilio Aguinaldo'];
+var RIZAL_CITIES_LIST = ['Antipolo','Cainta','Baras','Rodriguez','San Mateo','Binangonan',
+  'Taytay','Tanay','Teresa','Pililla','Cardona','Jala-Jala','Angono','Morong'];
+var LAGUNA_CITIES_LIST = ['San Pedro','Calamba','Cabuyao','Binan','Santa Rosa','Los Banos'];
 var activeRegion = 'ncr';
 var activeBrand = 'avg';
 var activeCityFuel = 'r91';
@@ -1287,7 +1295,9 @@ function renderChart(fuel) {
 
   // ── Build location-aware annotation ──
   var regionLabel = activeRegion === 'ncr' ? 'Metro Manila (NCR) average' :
-                    activeRegion === 'pampanga' ? 'Pampanga average' :
+                    activeRegion === 'cavite' ? 'Cavite average' :
+                    activeRegion === 'rizal'  ? 'Rizal average' :
+                    activeRegion === 'laguna' ? 'Laguna average' :
                     'National average';
   var noteText = '⚡ ' + regionLabel + ' · Iran war crisis: Mar–Apr peak';
 
@@ -1402,8 +1412,10 @@ function buildCityPriceGrid() {
 
   var allCities = Object.keys(CITY_PRICES);
   var cities = allCities.filter(function(c) {
-    if (activeRegion === 'ncr') return NCR_CITIES_LIST.indexOf(c) !== -1;
-    if (activeRegion === 'pampanga') return PAMPANGA_CITIES_LIST.indexOf(c) !== -1;
+    if (activeRegion === 'ncr')    return NCR_CITIES_LIST.indexOf(c) !== -1;
+    if (activeRegion === 'cavite') return CAVITE_CITIES_LIST.indexOf(c) !== -1;
+    if (activeRegion === 'rizal')  return RIZAL_CITIES_LIST.indexOf(c) !== -1;
+    if (activeRegion === 'laguna') return LAGUNA_CITIES_LIST.indexOf(c) !== -1;
     return true;
   });
 

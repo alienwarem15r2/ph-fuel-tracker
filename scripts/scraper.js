@@ -571,7 +571,11 @@ async function scrapeGasWatchCityStations(url) {
 }
 
 function computeCityPrices(stations) {
-  const NORM   = { 'Parañaque': 'Paranaque', 'Las Piñas': 'Las Pinas' };
+  const NORM   = {
+    'Parañaque': 'Paranaque', 'Las Piñas': 'Las Pinas',
+    'Dasmariñas': 'Dasmarinas', 'Biñan': 'Binan', 'Los Baños': 'Los Banos',
+    'Peñaranda': 'Penaranda', 'Muñoz': 'Munoz'
+  };
   const BRANDS = {
     'flying-v': 'Flying V', shell: 'Shell', petron: 'Petron', caltex: 'Caltex',
     seaoil: 'Seaoil', phoenix: 'Phoenix', unioil: 'Unioil', cleanfuel: 'Cleanfuel',
@@ -588,15 +592,29 @@ function computeCityPrices(stations) {
     if (p.premium95 > 50 && p.premium95 < 300) byCity[city].r95.push({ v: p.premium95, b: bn });
     if (p.diesel    > 50 && p.diesel    < 300) byCity[city].dsl.push({ v: p.diesel,    b: bn });
   }
+  // Remove outliers using IQR method before computing stats
+  function iqrFilter(items) {
+    if (items.length < 4) return items;
+    const sorted = [...items].sort((a, b) => a.v - b.v);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)].v;
+    const q3 = sorted[Math.floor(sorted.length * 0.75)].v;
+    const iqr = Math.max(q3 - q1, 5); // min IQR of ₱5 to avoid zero-width fence
+    const lo = q1 - 1.5 * iqr;
+    const hi = q3 + 1.5 * iqr;
+    const filtered = items.filter(x => x.v >= lo && x.v <= hi);
+    return filtered.length >= 3 ? filtered : items;
+  }
+
   const out = {};
   for (const [city, d] of Object.entries(byCity)) {
     const c = {};
     for (const t of ['r91', 'r95', 'dsl']) {
       if (!d[t].length) continue;
-      const vals = d[t].map(x => x.v);
+      const clean = iqrFilter(d[t]);
+      const vals = clean.map(x => x.v);
       const lo = Math.min(...vals), hi = Math.max(...vals);
       const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-      const chpst = d[t].reduce((a, b) => a.v < b.v ? a : b);
+      const chpst = clean.reduce((a, b) => a.v < b.v ? a : b);
       c[t] = {
         avg: Math.round(avg * 100) / 100,
         lo:  Math.round(lo  * 100) / 100,
