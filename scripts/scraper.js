@@ -356,10 +356,10 @@ async function scrapeGasWatch() {
     if (adjDiesel || adjGasoline) break;
   }
 
-  // GasWatch advisory titles sometimes carry multi-week cumulative totals (> ₱5 is a red flag).
-  // Body text reliably holds individual-week values — parse it as a correction.
+  // GasWatch advisory titles sometimes carry multi-week cumulative totals (> ₱5 is a red flag)
+  // or may simply be null. Body text reliably holds individual-week values.
   const isCumulative = v => v && Math.abs(parseFloat(v)) > 5;
-  if (isCumulative(adjGasoline) || isCumulative(adjDiesel)) {
+  if (!adjGasoline || !adjDiesel || isCumulative(adjGasoline) || isCumulative(adjDiesel)) {
     function bodyExtract(text, kw) {
       let m = text.match(new RegExp(kw + '[^.]{0,25}(?:rise|increas|hike)[^₱P\\d]{0,10}[₱P]?([\\d.]+)', 'i'));
       if (m) return '+' + m[1];
@@ -983,7 +983,17 @@ async function scrapeDoeNCRPrices() {
     }
   }
 
-  if (!markdown) throw new Error('Could not fetch DOE PDF via Firecrawl (all 5 Mondays failed)');
+  if (!markdown) {
+    // Cache failure for 6h regardless of reason (Cloudflare, FC limit, etc.)
+    // so the next 15-min cron run skips immediately instead of retrying
+    const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
+    await fetch(`${KV_URL}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
+    }).catch(() => {});
+    throw new Error('Could not fetch DOE PDF via Firecrawl (all 5 Mondays failed)');
+  }
 
   const prices = parseDoeMarkdown(markdown);
   const cityCount = Object.keys(prices).length;
