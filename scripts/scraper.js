@@ -588,20 +588,32 @@ function computeCityPrices(stations, refPrices) {
   // while keeping legitimate inter-city variation. Falls back to loose range if no reference.
   const WIN = 18;
   const ok = (v, ref) => ref > 0 ? (v >= ref - WIN && v <= ref + WIN) : (v > 50 && v < 300);
-  const refR91 = refPrices?.r91 || 0;
-  const refR95 = refPrices?.r95 || 0;
-  const refDsl = refPrices?.dsl || 0;
+  const refR91     = refPrices?.r91  || 0;
+  const refR95     = refPrices?.r95  || 0;
+  const refDsl     = refPrices?.dsl  || 0;
+  // Derive approximate refs for premium fuels (no separate reference price scraped)
+  const refR97     = refR95  > 0 ? refR95  + 5  : 0;
+  const refDslPlus = refDsl  > 0 ? refDsl  + 5  : 0;
 
   const byCity = {};
+  let _loggedKeys = false;
   for (const s of stations) {
     if (!s.area || !s.prices) continue;
     const city = NORM[s.area] || s.area;
-    if (!byCity[city]) byCity[city] = { r91: [], r95: [], dsl: [] };
+    if (!byCity[city]) byCity[city] = { r91: [], r95: [], r97: [], dsl: [], dsl_plus: [] };
     const bn = BRANDS[s.brand] || s.brand || '?';
     const p = s.prices;
-    if (ok(p.unleaded,  refR91)) byCity[city].r91.push({ v: p.unleaded,  b: bn });
-    if (ok(p.premium95, refR95)) byCity[city].r95.push({ v: p.premium95, b: bn });
-    if (ok(p.diesel,    refDsl)) byCity[city].dsl.push({ v: p.diesel,    b: bn });
+    // Log price keys once to help diagnose missing fuels
+    if (!_loggedKeys) { console.log('[gaswatch] Sample station price keys:', Object.keys(p).join(', ')); _loggedKeys = true; }
+    if (ok(p.unleaded,    refR91))     byCity[city].r91.push({ v: p.unleaded,    b: bn });
+    if (ok(p.premium95,   refR95))     byCity[city].r95.push({ v: p.premium95,   b: bn });
+    // RON 97 — GasWatch may use 'premium97' or 'ron97'
+    const v97 = p.premium97 ?? p.ron97 ?? p.super97;
+    if (v97 && ok(v97, refR97))        byCity[city].r97.push({ v: v97,           b: bn });
+    if (ok(p.diesel,      refDsl))     byCity[city].dsl.push({ v: p.diesel,      b: bn });
+    // Premium Diesel — GasWatch may use 'premium_diesel', 'diesel_plus', or 'dieselplus'
+    const vDp = p.premium_diesel ?? p.diesel_plus ?? p.dieselplus ?? p.premiumDiesel;
+    if (vDp && ok(vDp, refDslPlus))   byCity[city].dsl_plus.push({ v: vDp,      b: bn });
   }
   // Remove outliers using IQR method before computing stats
   function iqrFilter(items) {
@@ -619,7 +631,7 @@ function computeCityPrices(stations, refPrices) {
   const out = {};
   for (const [city, d] of Object.entries(byCity)) {
     const c = {};
-    for (const t of ['r91', 'r95', 'dsl']) {
+    for (const t of ['r91', 'r95', 'r97', 'dsl', 'dsl_plus']) {
       if (!d[t].length) continue;
       const clean = iqrFilter(d[t]);
       const vals = clean.map(x => x.v);

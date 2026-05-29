@@ -274,9 +274,11 @@
           <div style="width:1px;height:20px;background:var(--border);"></div>
         
           <div style="width:1px;height:20px;background:var(--border);"></div>
-          <button class="ftab on" id="city-fuel-r91" onclick="switchCityFuel('r91',this)">RON 91</button>
-          <button class="ftab" id="city-fuel-r95" onclick="switchCityFuel('r95',this)">RON 95</button>
-          <button class="ftab" id="city-fuel-dsl" onclick="switchCityFuel('dsl',this)">Diesel</button>
+          <button class="ftab on"  id="city-fuel-dsl"     onclick="switchCityFuel('dsl',this)">Diesel</button>
+          <button class="ftab"     id="city-fuel-dsl_plus" onclick="switchCityFuel('dsl_plus',this)">Prem. Diesel</button>
+          <button class="ftab"     id="city-fuel-r91"      onclick="switchCityFuel('r91',this)">Unl. 91</button>
+          <button class="ftab"     id="city-fuel-r95"      onclick="switchCityFuel('r95',this)">Premium 95</button>
+          <button class="ftab"     id="city-fuel-r97"      onclick="switchCityFuel('r97',this)">Premium 97</button>
         </div>
       </div>
       <div id="city-price-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;"></div>
@@ -671,7 +673,7 @@ var RIZAL_CITIES_LIST = ['Antipolo','Cainta','Baras','Rodriguez','San Mateo','Bi
 var LAGUNA_CITIES_LIST = ['San Pedro','Calamba','Cabuyao','Binan','Santa Rosa','Los Banos'];
 var activeRegion = 'ncr';
 var activeBrand = 'avg';
-var activeCityFuel = 'r91';
+var activeCityFuel = 'dsl';
 
 /* ══════════════════════════════════════════════════════════════
    FETCH LIVE FUEL DATA
@@ -1395,20 +1397,18 @@ var liveDataReady = false;
 function switchRegion(val) { activeRegion = val; buildCityPriceGrid(); }
 function switchCityFuel(type, btn) {
   activeCityFuel = type;
-  document.querySelectorAll('#city-fuel-r91,#city-fuel-r95,#city-fuel-dsl').forEach(function(b){ b.className = 'ftab'; });
+  document.querySelectorAll('#city-fuel-dsl,#city-fuel-dsl_plus,#city-fuel-r91,#city-fuel-r95,#city-fuel-r97').forEach(function(b){ b.className = 'ftab'; });
   btn.className = 'ftab on';
   buildCityPriceGrid();
 }
 function switchBrand(brand) { activeBrand = brand; buildCityPriceGrid(); }
 
 var CITY_PRODUCTS = [
-  { key: 'ron100',   label: 'RON 100'   },
-  { key: 'ron97',    label: 'RON 97'    },
-  { key: 'r95',      label: 'RON 95'    },
-  { key: 'r91',      label: 'RON 91'    },
-  { key: 'dsl',      label: 'Diesel'    },
-  { key: 'dsl_plus', label: 'Diesel+'   },
-  { key: 'kero',     label: 'Kerosene'  },
+  { key: 'dsl',      label: 'Diesel'        },
+  { key: 'dsl_plus', label: 'Prem. Diesel'  },
+  { key: 'r91',      label: 'Unl. 91'       },
+  { key: 'r95',      label: 'Premium 95'    },
+  { key: 'r97',      label: 'Premium 97'    },
 ];
 
 function buildCityPriceGrid() {
