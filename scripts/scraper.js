@@ -2,8 +2,12 @@
 // Runs every 15 min via GH Actions cron, writes fresh data to Vercel KV.
 // Needs env: KV_REST_API_URL, KV_REST_API_TOKEN, GROQ_API_KEY (optional, for forecast)
 
-import puppeteer from 'puppeteer';
+import puppeteerExtra from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { existsSync } from 'fs';
+
+puppeteerExtra.use(StealthPlugin());
 
 // ── KV ──────────────────────────────────────────────────────────────────────
 const KV_URL   = process.env.KV_REST_API_URL;
@@ -956,6 +960,68 @@ function parseDoeMarkdown(text) {
   return prices;
 }
 
+// Launch a real Chromium browser (with Stealth plugin) to pass Cloudflare,
+// then download the PDF and extract its text using pdf-parse.
+async function fetchDoeWithPuppeteer(pdfUrl) {
+  const browser = await puppeteerExtra.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+  });
+  try {
+    const page = await browser.newPage();
+    const origin = new URL(pdfUrl).origin; // https://prod-cms.doe.gov.ph
+
+    // Step 1: Visit the DOE root first so Cloudflare issues a clearance cookie
+    console.log(`[doe-puppet] Visiting ${origin} for CF clearance…`);
+    await page.goto(origin, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // If Cloudflare challenge page, wait for it to auto-resolve
+    const title = await page.title();
+    if (/just a moment|cloudflare/i.test(title)) {
+      console.log('[doe-puppet] CF challenge detected, waiting for auto-resolve…');
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 25000 }).catch(() => {});
+    }
+
+    const cookies = await page.cookies();
+    const hasCF   = cookies.some(c => c.name === 'cf_clearance');
+    console.log(`[doe-puppet] Cookies: ${cookies.length} (cf_clearance: ${hasCF})`);
+
+    // Step 2: Use clearance cookies + browser UA to fetch the PDF binary
+    const ua        = await page.evaluate(() => navigator.userAgent);
+    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+    const resp = await fetch(pdfUrl, {
+      headers: {
+        'User-Agent': ua,
+        'Cookie':     cookieStr,
+        'Referer':    origin + '/',
+        'Accept':     'application/pdf,*/*'
+      },
+      signal: AbortSignal.timeout(40000)
+    });
+
+    if (!resp.ok) throw new Error(`PDF HTTP ${resp.status}`);
+
+    const ct = resp.headers.get('content-type') || '';
+    if (!/pdf|octet/i.test(ct)) {
+      const preview = await resp.text();
+      if (/cloudflare|blocked|just a moment/i.test(preview))
+        throw new Error('Still Cloudflare blocked after clearance attempt');
+      throw new Error(`Unexpected content-type: ${ct} (${preview.slice(0, 80)})`);
+    }
+
+    const buf = Buffer.from(await resp.arrayBuffer());
+    console.log(`[doe-puppet] PDF downloaded: ${buf.length} bytes`);
+
+    // Step 3: Extract text from the PDF buffer
+    const parsed = await pdfParse(buf);
+    console.log(`[doe-puppet] PDF text: ${parsed.text.length} chars, ${parsed.numpages} pages`);
+    return parsed.text;
+  } finally {
+    await browser.close();
+  }
+}
+
 async function scrapeDoeNCRPrices() {
   // Compute current week's Monday in PH time
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
@@ -980,45 +1046,64 @@ async function scrapeDoeNCRPrices() {
     throw new Error(`DOE PDF blocked by Cloudflare (cooldown active, retry after ${prevFail})`);
   }
 
-  // Try up to 5 Mondays back to find accessible PDF
-  let markdown = null;
+  // Build candidate PDF URLs (this week + up to 4 previous Mondays)
+  const pdfUrls = [];
   for (let w = 0; w < 5; w++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() - w * 7);
     const mm   = String(d.getMonth() + 1).padStart(2, '0');
     const dd   = String(d.getDate()).padStart(2, '0');
     const yyyy = d.getFullYear();
-    const url  = `https://prod-cms.doe.gov.ph/documents/d/guest/ncr-price-monitoring-${mm}${dd}${yyyy}-pdf`;
-    console.log(`[doe] Trying PDF: ${url}`);
+    pdfUrls.push(`https://prod-cms.doe.gov.ph/documents/d/guest/ncr-price-monitoring-${mm}${dd}${yyyy}-pdf`);
+  }
+
+  let markdown = null;
+
+  // ── Try Puppeteer + Stealth first (bypasses Cloudflare with a real browser) ──
+  for (const url of pdfUrls) {
+    console.log(`[doe] Trying Puppeteer: ${url}`);
     try {
-      const fcData = await firecrawlScrapeData(url, 'doe', {
-        formats: ['markdown'],
-        waitFor: 6000,
-        actions: [{ type: 'wait', milliseconds: 5000 }]
-      });
-      const md = fcData.markdown || fcData.content || '';
-      console.log(`[doe] FC response keys: ${Object.keys(fcData).join(', ')}, markdown length: ${md.length}`);
-      // Reject Cloudflare block page — cache failure so we don't retry for 6 hours
-      if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
-        const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
-        await fetch(`${KV_URL}/pipeline`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
-        });
-        throw new Error(`Cloudflare block — cooldown set for 6h (${retryAfter})`);
-      }
-      if (md.length > 300) {
-        markdown = md;
-        console.log(`[doe] Got markdown (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
-        console.log('[doe] Markdown sample:\n' + md.slice(0, 1200));
+      const pdfText = await fetchDoeWithPuppeteer(url);
+      if (pdfText && pdfText.length > 200) {
+        markdown = pdfText;
+        console.log(`[doe] Puppeteer OK (${pdfText.length} chars). Sample:\n${pdfText.slice(0, 600)}`);
         break;
       }
-      console.warn(`[doe] PDF response too short (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
     } catch(e) {
-      console.warn(`[doe] FC error for ${mm}${dd}${yyyy}: ${e.message}`);
-      // If Cloudflare already set cooldown, stop trying other weeks
-      if (/cooldown/i.test(e.message)) break;
+      console.warn(`[doe] Puppeteer failed for ${url}: ${e.message}`);
+    }
+  }
+
+  // ── Fall back to Firecrawl if Puppeteer didn't work ───────────────────────
+  if (!markdown) {
+    for (const url of pdfUrls) {
+      console.log(`[doe] Trying Firecrawl: ${url}`);
+      try {
+        const fcData = await firecrawlScrapeData(url, 'doe', {
+          formats: ['markdown'],
+          waitFor: 6000,
+          actions: [{ type: 'wait', milliseconds: 5000 }]
+        });
+        const md = fcData.markdown || fcData.content || '';
+        if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
+          const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
+          await fetch(`${KV_URL}/pipeline`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
+          });
+          console.warn('[doe] Firecrawl also Cloudflare-blocked, cooldown set 6h');
+          break;
+        }
+        if (md.length > 300) {
+          markdown = md;
+          console.log(`[doe] Firecrawl OK (${md.length} chars)`);
+          break;
+        }
+      } catch(e) {
+        console.warn(`[doe] Firecrawl failed: ${e.message}`);
+        if (/cooldown/i.test(e.message)) break;
+      }
     }
   }
 
