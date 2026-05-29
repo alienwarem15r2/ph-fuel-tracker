@@ -357,36 +357,39 @@ async function scrapeGasWatch() {
   }
 
   // GasWatch advisory titles sometimes carry multi-week cumulative totals (> ₱5 is a red flag)
-  // or may simply be null. Body text reliably holds individual-week values.
+  // or may be null. Body text reliably holds individual-week values like
+  // "diesel rises ₱2.82/L and gasoline rises ₱1.21/L".
   const isCumulative = v => v && Math.abs(parseFloat(v)) > 5;
   if (!adjGasoline || !adjDiesel || isCumulative(adjGasoline) || isCumulative(adjDiesel)) {
+    // Simple extractor: find keyword then within the same clause (before next comma/period)
+    // look for rise/rollback direction and the first price number.
     function bodyExtract(text, kw) {
-      let m = text.match(new RegExp(kw + '[^.]{0,25}(?:rise|increas|hike)[^₱P\\d]{0,10}[₱P]?([\\d.]+)', 'i'));
-      if (m) return '+' + m[1];
-      m = text.match(new RegExp('(?:rise|increas|hike)[^₱P\\d]{0,40}[₱P]?([\\d.]+)\\/(?:liter|L)[^.]{0,40}' + kw, 'i'));
-      if (m) return '+' + m[1];
-      m = text.match(new RegExp(kw + '[^.]{0,25}(?:rollback|decreas|fall|drop|roll)[^₱P\\d]{0,10}[₱P]?([\\d.]+)', 'i'));
-      if (m) return '-' + m[1];
-      m = text.match(new RegExp('(?:rollback|decreas|fall|drop)[^₱P\\d]{0,40}[₱P]?([\\d.]+)\\/(?:liter|L)[^.]{0,40}' + kw, 'i'));
-      if (m) return '-' + m[1];
-      return null;
+      // Grab the clause starting at the keyword up to the next ',' or '.'
+      const clauseM = text.match(new RegExp(kw + '[^,\\.]{0,60}', 'i'));
+      if (!clauseM) return null;
+      const clause = clauseM[0];
+      const numM = clause.match(/(\d+\.\d+)/);
+      if (!numM) return null;
+      const sign = /(rollback|decreas|fall|drop|roll.?back)/i.test(clause) ? '-' : '+';
+      return sign + numM[1];
     }
-    for (const bm of js.matchAll(/body\s*:\s*["'`]((?:[^"'`\\]|\\.){30,600})["'`]/gi)) {
-      const b = bm[1].replace(/\\n/g, ' ').replace(/\\'/g, "'");
+    for (const bm of js.matchAll(/body\s*:\s*["'`]((?:[^"'`\\]|\\.){30,800})["'`]/gi)) {
+      const b = bm[1].replace(/\\n/g, ' ').replace(/\\t/g, ' ').replace(/\\'/g, "'");
       if (!/diesel|gasoline/i.test(b)) continue;
       const bGas  = bodyExtract(b, 'gasoline') || bodyExtract(b, 'unleaded');
       const bDsl  = bodyExtract(b, 'diesel');
       const bKero = bodyExtract(b, 'kerosene');
       if (bGas || bDsl) {
-        if (isCumulative(adjGasoline) && bGas)  adjGasoline = bGas;
-        if (isCumulative(adjDiesel)   && bDsl)  adjDiesel   = bDsl;
+        // Replace only if current value is null or unreasonably large (cumulative)
+        if ((!adjGasoline || isCumulative(adjGasoline)) && bGas)  adjGasoline = bGas;
+        if ((!adjDiesel   || isCumulative(adjDiesel))   && bDsl)  adjDiesel   = bDsl;
         if (bKero) adjKerosene = bKero;
-        console.log(`[gaswatch] Adj corrected from body text: gas=${adjGasoline}, dsl=${adjDiesel}, kero=${adjKerosene}`);
+        console.log(`[gaswatch] Adj from body text: gas=${adjGasoline}, dsl=${adjDiesel}, kero=${adjKerosene}`);
         break;
       }
     }
   }
-  console.log(`[gaswatch] Adj: gas=${adjGasoline}, dsl=${adjDiesel}`);
+  console.log(`[gaswatch] Adj final: gas=${adjGasoline}, dsl=${adjDiesel}`);
 
   const keroAdj = adjKerosene ? parseFloat(adjKerosene) : 0;
   const r = (v, d) => v > 0 ? Math.round((v + d) * 100) / 100 : 0;
