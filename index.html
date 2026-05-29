@@ -651,40 +651,19 @@ var PRICES = {
   dsl:  { petron:64.50, shell:66.29, lw_p:64.60, lw_s:66.39, adj:'-0.10/L', chgDir:'down', label:'Diesel std' },
 };
 
-/* City prices (NCR + Pampanga, brand mode included) */
-var CITY_PRICES = {
-  'Quezon City': {r91:{avg:73.62,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.52,lo:73.43,hi:79.05,cheapest:'Flying V'},dsl:{avg:60.89,lo:57.75,hi:68.39,cheapest:'Flying V'}},
-  'Pasig':       {r91:{avg:73.9,lo:71.0,hi:76.15,cheapest:'Seaoil'},  r95:{avg:76.8,lo:73.9,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:65.05,lo:62.1,hi:68.39,cheapest:'Seaoil'}},
-  'Manila':      {r91:{avg:74.2,lo:71.3,hi:76.15,cheapest:'Flying V'},r95:{avg:77.1,lo:74.2,hi:79.05,cheapest:'Cleanfuel'},dsl:{avg:65.3,lo:57.75,hi:68.39,cheapest:'Flying V'}},
-  'Makati':      {r91:{avg:75.0,lo:72.8,hi:79.25,cheapest:'Cleanfuel'},r95:{avg:77.9,lo:75.7,hi:82.0,cheapest:'Seaoil'}, dsl:{avg:66.1,lo:64.1,hi:72.1,cheapest:'Unioil'}},
-  'Caloocan':    {r91:{avg:73.4,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.3,lo:73.43,hi:79.05,cheapest:'Phoenix'}, dsl:{avg:64.5,lo:61.1,hi:68.39,cheapest:'Petron'}},
-  'Taguig':      {r91:{avg:74.6,lo:72.3,hi:76.15,cheapest:'Seaoil'}, r95:{avg:77.5,lo:75.2,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:65.8,lo:63.5,hi:68.39,cheapest:'Seaoil'}},
-  'Marikina':    {r91:{avg:73.7,lo:71.2,hi:76.15,cheapest:'Petron'}, r95:{avg:76.6,lo:74.1,hi:79.05,cheapest:'Petron'},  dsl:{avg:64.7,lo:62.4,hi:68.39,cheapest:'Petron'}},
-  'Antipolo':    {r91:{avg:74.0,lo:71.8,hi:76.5,cheapest:'Petron'},  r95:{avg:76.9,lo:74.7,hi:79.4,cheapest:'Petron'},   dsl:{avg:65.0,lo:62.8,hi:68.6,cheapest:'Petron'}},
-  'Mandaluyong': {r91:{avg:74.4,lo:71.9,hi:76.15,cheapest:'Petron'}, r95:{avg:77.3,lo:74.8,hi:79.05,cheapest:'Petron'},  dsl:{avg:65.6,lo:63.3,hi:68.39,cheapest:'Petron'}},
-  'Paranaque':   {r91:{avg:73.5,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.4,lo:73.43,hi:79.05,cheapest:'Flying V'},dsl:{avg:64.4,lo:60.8,hi:68.39,cheapest:'Flying V'}},
-  'Las Pinas':   {r91:{avg:73.45,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.35,lo:73.43,hi:79.05,cheapest:'Flying V'},dsl:{avg:64.35,lo:60.7,hi:68.39,cheapest:'Flying V'}},
-  'Muntinlupa':  {r91:{avg:73.6,lo:71.1,hi:76.15,cheapest:'Seaoil'}, r95:{avg:76.5,lo:74.0,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:64.55,lo:62.0,hi:68.39,cheapest:'Seaoil'}},
-  'Valenzuela':  {r91:{avg:73.35,lo:70.53,hi:76.15,cheapest:'Flying V'},r95:{avg:76.25,lo:73.43,hi:79.05,cheapest:'Cleanfuel'},dsl:{avg:64.3,lo:60.6,hi:68.39,cheapest:'Petron'}},
-  'Malabon':     {r91:{avg:73.4,lo:70.9,hi:76.15,cheapest:'Petron'}, r95:{avg:76.3,lo:73.8,hi:79.05,cheapest:'Petron'},  dsl:{avg:64.45,lo:61.9,hi:68.39,cheapest:'Petron'}},
-  'Pasay':       {r91:{avg:74.1,lo:71.6,hi:76.15,cheapest:'Seaoil'}, r95:{avg:77.0,lo:74.5,hi:79.05,cheapest:'Seaoil'},  dsl:{avg:65.2,lo:62.7,hi:68.39,cheapest:'Seaoil'}},
-  'San Fernando':{r91:{avg:75.2,lo:72.3,hi:77.8,cheapest:'Petron'}, r95:{avg:78.1,lo:75.2,hi:80.7,cheapest:'Petron'},  dsl:{avg:66.4,lo:63.6,hi:70.1,cheapest:'Phoenix'}},
-  'Angeles City':{r91:{avg:75.6,lo:72.8,hi:78.2,cheapest:'Petron'}, r95:{avg:78.5,lo:75.7,hi:81.1,cheapest:'Seaoil'},  dsl:{avg:66.8,lo:64.0,hi:70.5,cheapest:'Seaoil'}},
-  'Mabalacat':   {r91:{avg:75.4,lo:72.6,hi:78.0,cheapest:'Petron'}, r95:{avg:78.3,lo:75.5,hi:80.9,cheapest:'Petron'},  dsl:{avg:66.6,lo:63.8,hi:70.3,cheapest:'Petron'}},
-  'Clark (CSEZ)':{r91:{avg:76.0,lo:73.8,hi:78.8,cheapest:'Shell'},  r95:{avg:78.9,lo:76.7,hi:81.7,cheapest:'Shell'},   dsl:{avg:67.2,lo:65.0,hi:70.9,cheapest:'Shell'}},
-};
+// City prices — populated live from GasWatch GAS_STATIONS via API (scraper.js → KV → /api/fuel)
+// GasWatch covers all Metro Manila cities. Prices update weekly when DOE adjustments take effect.
+var CITY_PRICES = {};           // filled by fetchLiveData() from d.city_prices
+var CITY_PRICES_BASELINE = {};  // deep-copy taken after live data loads, for delta correction
 
-var NCR_CITIES_LIST = ['Quezon City','Pasig','Manila','Makati','Caloocan','Taguig','Marikina','Antipolo','Mandaluyong','Paranaque','Las Pinas','Muntinlupa','Valenzuela','Malabon','Pasay'];
+// NCR whitelist — used to filter which API cities show in the Metro Manila tab
+var NCR_CITIES_LIST = ['Quezon City','Pasig','Manila','Makati','Caloocan','Taguig',
+  'Marikina','Mandaluyong','Paranaque','Las Pinas','Muntinlupa','Valenzuela',
+  'Malabon','Pasay','Navotas','Pateros','San Juan'];
 var PAMPANGA_CITIES_LIST = ['San Fernando','Angeles City','Mabalacat','Clark (CSEZ)'];
 var activeRegion = 'ncr';
 var activeBrand = 'avg';
 var activeCityFuel = 'r91';
-
-// IMMUTABLE BASELINE — deep copy taken once at load time.
-// All live-data deltas are applied from this original, never from the
-// already-adjusted CITY_PRICES, so prices cannot compound on every refresh.
-var CITY_PRICES_BASELINE = JSON.parse(JSON.stringify(CITY_PRICES));
-var BASELINE_PETRON = { ron91: 73.25, ron95: 76.15, diesel_std: 64.50 };
 
 /* ══════════════════════════════════════════════════════════════
    FETCH LIVE FUEL DATA
@@ -976,18 +955,33 @@ function applyLiveFuelData(d) {
     // 6. Update brand cards
     buildBrandCards(d);
 
-    // 7. Update city prices using delta from IMMUTABLE BASELINE — not from current CITY_PRICES.
-    //    This ensures prices don't compound downward on every refresh.
-    if (p.petron && p.petron.ron91) {
-      var delta91  = p.petron.ron91              - BASELINE_PETRON.ron91;
-      var delta95  = (p.petron.ron95  || BASELINE_PETRON.ron95)  - BASELINE_PETRON.ron95;
-      var deltaDsl = (p.petron.diesel_std || BASELINE_PETRON.diesel_std) - BASELINE_PETRON.diesel_std;
-      for (var city in CITY_PRICES) {
-        // Always start from the frozen baseline value, then add the current delta
-        if (CITY_PRICES_BASELINE[city]) {
-          CITY_PRICES[city].r91.avg = Math.round((CITY_PRICES_BASELINE[city].r91.avg + delta91) * 100) / 100;
-          CITY_PRICES[city].r95.avg = Math.round((CITY_PRICES_BASELINE[city].r95.avg + delta95) * 100) / 100;
-          CITY_PRICES[city].dsl.avg = Math.round((CITY_PRICES_BASELINE[city].dsl.avg + deltaDsl) * 100) / 100;
+    // 7. City prices — load from live GasWatch GAS_STATIONS data in KV.
+    //    GAS_STATIONS prices may lag one week behind (GasWatch updates weekly), so we apply
+    //    a delta correction using the Petron station baseline stored alongside the city data.
+    if (d.city_prices && Object.keys(d.city_prices).length > 0) {
+      // Rebuild CITY_PRICES from API data (exclude internal _petron_baseline field)
+      CITY_PRICES = {};
+      for (var ck in d.city_prices) {
+        if (ck !== '_petron_baseline') CITY_PRICES[ck] = d.city_prices[ck];
+      }
+      CITY_PRICES_BASELINE = JSON.parse(JSON.stringify(CITY_PRICES));
+
+      // Delta correction: if GAS_STATIONS are from previous week, shift prices up by adjustment
+      var stationBaseline = d.city_prices._petron_baseline || 0;
+      if (p.petron && p.petron.ron91 && stationBaseline > 0) {
+        var cpDelta91  = Math.round((p.petron.ron91 - stationBaseline) * 100) / 100;
+        // Use DOE adjustment for diesel delta if available, otherwise approximate from gas delta
+        var adjDslStr  = d.doe_adjustment && d.doe_adjustment.diesel_std;
+        var cpDeltaDsl = adjDslStr ? parseFloat(adjDslStr) : 0;
+        // Only apply if delta is meaningful (>0.50/L) and plausible (not a data anomaly)
+        if (Math.abs(cpDelta91) > 0.5 && Math.abs(cpDelta91) < 15) {
+          for (var cc in CITY_PRICES) {
+            var cp = CITY_PRICES[cc], bp = CITY_PRICES_BASELINE[cc];
+            if (!bp) continue;
+            if (cp.r91) { cp.r91.avg = Math.round((bp.r91.avg + cpDelta91) * 100) / 100; cp.r91.lo = Math.round((bp.r91.lo + cpDelta91) * 100) / 100; cp.r91.hi = Math.round((bp.r91.hi + cpDelta91) * 100) / 100; }
+            if (cp.r95) { cp.r95.avg = Math.round((bp.r95.avg + cpDelta91) * 100) / 100; cp.r95.lo = Math.round((bp.r95.lo + cpDelta91) * 100) / 100; cp.r95.hi = Math.round((bp.r95.hi + cpDelta91) * 100) / 100; }
+            if (cp.dsl && cpDeltaDsl !== 0) { cp.dsl.avg = Math.round((bp.dsl.avg + cpDeltaDsl) * 100) / 100; cp.dsl.lo = Math.round((bp.dsl.lo + cpDeltaDsl) * 100) / 100; cp.dsl.hi = Math.round((bp.dsl.hi + cpDeltaDsl) * 100) / 100; }
+          }
         }
       }
     }
