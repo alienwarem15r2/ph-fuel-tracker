@@ -10,11 +10,14 @@ import re
 import sys
 from datetime import datetime
 
-DOE_PAGE = (
-    "https://doe.gov.ph/articles/group/liquid-fuels"
-    "?maincat=Retail+Pump+Prices&subcategory=NCR+Pump+Prices&display_type=Card"
-)
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; priceph-scraper/1.0)"}
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/pdf,*/*",
+}
 
 FUEL_MAP = {
     "RON 100":     "ron100",
@@ -52,24 +55,28 @@ CITY_NORM = {
 
 
 def find_latest_pdf_url():
-    resp = requests.get(DOE_PAGE, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    links = re.findall(
-        r'https://prod-cms\.doe\.gov\.ph/documents/d/[^\s"\'<>]+', resp.text
-    )
-    if not links:
-        raise RuntimeError("No NCR PDF links found on DOE page")
-
-    def url_date(url):
-        m = re.search(r"ncr-price-monitoring-(\d{8})-pdf", url)
-        if m:
-            try:
-                return datetime.strptime(m.group(1), "%m%d%Y")
-            except ValueError:
-                pass
-        return datetime.min
-
-    return max(links, key=url_date)
+    """
+    Construct the PDF URL directly from the date — avoids scraping doe.gov.ph
+    which blocks cloud/CI IPs with 403. The PDF server (prod-cms.doe.gov.ph)
+    is more permissive. DOE releases the NCR report every Monday.
+    Try the last 5 Mondays until one responds 200.
+    """
+    today = datetime.utcnow() + timedelta(hours=8)  # Philippine time
+    # Walk back to the most recent Monday (weekday 0)
+    days_back = today.weekday()  # 0=Mon already, 1=Tue→1 day back, etc.
+    for extra_weeks in range(5):
+        monday = today - timedelta(days=days_back + extra_weeks * 7)
+        date_str = monday.strftime("%m%d%Y")
+        url = f"https://prod-cms.doe.gov.ph/documents/d/guest/ncr-price-monitoring-{date_str}-pdf"
+        try:
+            r = requests.head(url, headers=HEADERS, timeout=10, allow_redirects=True)
+            if r.status_code == 200:
+                print(f"[DOE] Found PDF for {monday.strftime('%Y-%m-%d')}: {url}")
+                return url
+            print(f"[DOE] {monday.strftime('%Y-%m-%d')} → HTTP {r.status_code}, trying earlier…")
+        except Exception as e:
+            print(f"[DOE] {monday.strftime('%Y-%m-%d')} → {e}, trying earlier…")
+    raise RuntimeError("No accessible DOE PDF found in the last 5 Mondays")
 
 
 def safe_float(val):
