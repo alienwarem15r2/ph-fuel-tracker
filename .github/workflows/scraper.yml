@@ -25,13 +25,6 @@ jobs:
           PUPPETEER_SKIP_DOWNLOAD: true
         working-directory: scripts
 
-      - name: Extract DOE prices
-        run: |
-          pip install pdfplumber requests --quiet
-          python extract_doe.py
-        working-directory: scripts
-        continue-on-error: true   # don't break the whole run if DOE PDF is unavailable
-
       - name: Run scraper
         env:
           KV_REST_API_URL:    ${{ secrets.KV_REST_API_URL }}

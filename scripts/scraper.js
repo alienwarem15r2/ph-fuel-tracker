@@ -3,7 +3,7 @@
 // Needs env: KV_REST_API_URL, KV_REST_API_TOKEN, GROQ_API_KEY (optional, for forecast)
 
 import puppeteer from 'puppeteer';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
 
 // ── KV ──────────────────────────────────────────────────────────────────────
 const KV_URL   = process.env.KV_REST_API_URL;
@@ -640,7 +640,7 @@ function computeCityPrices(stations, refPrices) {
 
 // ── Firecrawl (for NGCP — residential proxies bypass NGCP's IP block) ────────
 const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
-const FC_LIMITS = { ngcp: 20, manilawater: 8 }; // calls/day — ngcp:~600/mo, mw:~240/mo, total ~840/1000 credits
+const FC_LIMITS = { ngcp: 20, manilawater: 8, doe: 4 }; // ngcp:~600/mo, mw:~240/mo, doe:~4/mo (weekly cache), total ~844/1000 credits
 
 async function fcCount(key) {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -677,6 +677,187 @@ async function firecrawlScrape(url, key, extraOpts = {}) {
   if (!data.success) throw new Error('Firecrawl failed: ' + (data.error || 'unknown'));
   console.log(`[fc] ${key} scraped (${count + 1}/${limit} today)`);
   return data.data?.html || '';
+}
+
+async function firecrawlScrapeData(url, key, extraOpts = {}) {
+  if (!FIRECRAWL_KEY) throw new Error('No FIRECRAWL_API_KEY');
+  const limit = FC_LIMITS[key] || 4;
+  const count = await fcCount(key);
+  if (count >= limit) throw new Error(`Firecrawl ${key} daily limit reached (${count}/${limit})`);
+  const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: false, ...extraOpts }),
+    signal: AbortSignal.timeout(90000)
+  });
+  await fcIncr(key);
+  if (!res.ok) throw new Error(`Firecrawl HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error('Firecrawl failed: ' + (data.error || 'unknown'));
+  console.log(`[fc] ${key} data scraped (${count + 1}/${limit} today)`);
+  return data.data || {};
+}
+
+// ── DOE NCR Pump Prices ───────────────────────────────────────────────────────
+const DOE_FUEL_MAP = {
+  'RON 100': 'ron100', 'RON 97': 'ron97', 'RON 95': 'r95',
+  'RON 91': 'r91', 'DIESEL': 'dsl', 'DIESEL PLUS': 'dsl_plus', 'KEROSENE': 'kero'
+};
+const DOE_CITY_NORM = {
+  'Caloocan City': 'Caloocan', 'Manila City': 'Manila', 'Pasig City': 'Pasig',
+  'Taguig City': 'Taguig', 'Makati City': 'Makati', 'Marikina City': 'Marikina',
+  'Malabon City': 'Malabon', 'Navotas City': 'Navotas', 'Valenzuela City': 'Valenzuela',
+  'Pasay City': 'Pasay', 'Muntinlupa City': 'Muntinlupa', 'Las Piñas City': 'Las Pinas',
+  'Las Pinas City': 'Las Pinas', 'Parañaque City': 'Paranaque', 'Paranaque City': 'Paranaque',
+  'San Juan City': 'San Juan', 'Mandaluyong City': 'Mandaluyong', 'Pateros': 'Pateros',
+  'Quezon City': 'Quezon City', 'Antipolo City': 'Antipolo'
+};
+
+function parseDoeMarkdown(text) {
+  const safeNum = s => {
+    if (!s) return null;
+    const n = parseFloat(String(s).replace(/,/g, '').replace(/[^\d.]/g, ''));
+    return (isFinite(n) && n > 50 && n < 250) ? Math.round(n * 100) / 100 : null;
+  };
+
+  const prices = {};
+  let currentCity = null;
+  let colLo = -1, colHi = -1, colCommon = -1;
+  let headerParsed = false;
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || /^[\s|:-]+$/.test(line)) continue;
+
+    if (line.includes('|')) {
+      const cells = line.split('|').map(c => c.trim());
+
+      // Detect header row — look for AREA/PRODUCT keywords
+      if (!headerParsed && /AREA|PRODUCT/i.test(line)) {
+        let overallSeen = 0;
+        cells.forEach((c, i) => {
+          const cu = c.toUpperCase();
+          if (cu.includes('OVERALL') || cu.includes('RANGE')) {
+            overallSeen++;
+            if (overallSeen === 1) colLo = i;
+            else if (overallSeen === 2) colHi = i;
+          }
+          if (cu.includes('COMMON')) colCommon = i;
+        });
+        if (colLo === -1) { colLo = cells.length - 3; colHi = cells.length - 2; }
+        if (colCommon === -1) colCommon = cells.length - 1;
+        headerParsed = true;
+        console.log(`[doe] Header cols: lo=${colLo} hi=${colHi} common=${colCommon} (of ${cells.length})`);
+        continue;
+      }
+
+      // City detection from first non-empty cell
+      for (const cell of cells.slice(0, 4)) {
+        const norm = DOE_CITY_NORM[cell];
+        if (norm) { currentCity = norm; break; }
+      }
+
+      if (!currentCity) continue;
+
+      // Product detection
+      let fuelKey = null;
+      for (const cell of cells) {
+        fuelKey = DOE_FUEL_MAP[cell.toUpperCase().trim()];
+        if (fuelKey) break;
+      }
+      if (!fuelKey) continue;
+
+      const n = cells.length;
+      let lo = colLo >= 0 && colLo < n ? safeNum(cells[colLo]) : null;
+      let hi = colHi >= 0 && colHi < n ? safeNum(cells[colHi]) : null;
+      let avg = colCommon >= 0 && colCommon < n ? safeNum(cells[colCommon]) : null;
+
+      // Fallback: use last 3 valid numbers from the row
+      if (lo === null && hi === null) {
+        const nums = cells.slice(-5).map(safeNum).filter(v => v !== null);
+        if (nums.length >= 2) {
+          lo  = nums.length >= 3 ? nums[nums.length - 3] : null;
+          hi  = nums[nums.length - 2];
+          avg = nums[nums.length - 1];
+        }
+      }
+
+      if (lo === null && hi === null) continue;
+
+      const entry = {};
+      if (lo  !== null) entry.lo  = lo;
+      if (hi  !== null) entry.hi  = hi;
+      if (avg !== null) entry.avg = avg;
+
+      if (!prices[currentCity]) prices[currentCity] = {};
+      prices[currentCity][fuelKey] = entry;
+    }
+  }
+
+  return prices;
+}
+
+async function scrapeDoeNCRPrices() {
+  // Compute current week's Monday in PH time
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+  const dow = now.getDay(); // 0=Sun … 6=Sat
+  const daysFromMon = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - daysFromMon);
+  monday.setHours(0, 0, 0, 0);
+  const weekKey = monday.toLocaleDateString('en-CA'); // YYYY-MM-DD
+
+  // Weekly KV cache — avoids burning Firecrawl credits on every 15-min run
+  const cached = await kvGet('doe_ncr_week:' + weekKey).catch(() => null);
+  if (cached && Object.keys(cached).length > 0) {
+    console.log(`[doe] Cache hit for week ${weekKey}: ${Object.keys(cached).length} cities`);
+    return cached;
+  }
+
+  // Try up to 5 Mondays back to find accessible PDF
+  let markdown = null;
+  for (let w = 0; w < 5; w++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() - w * 7);
+    const mm   = String(d.getMonth() + 1).padStart(2, '0');
+    const dd   = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    const url  = `https://prod-cms.doe.gov.ph/documents/d/guest/ncr-price-monitoring-${mm}${dd}${yyyy}-pdf`;
+    console.log(`[doe] Trying PDF: ${url}`);
+    try {
+      const fcData = await firecrawlScrapeData(url, 'doe', { formats: ['markdown'], parsePDF: true });
+      const md = fcData.markdown || fcData.content || '';
+      if (md.length > 500) {
+        markdown = md;
+        console.log(`[doe] Got markdown (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
+        break;
+      }
+      console.warn(`[doe] PDF response too short (${md.length} chars) for ${yyyy}-${mm}-${dd}`);
+    } catch(e) {
+      console.warn(`[doe] FC error for ${mm}${dd}${yyyy}: ${e.message}`);
+    }
+  }
+
+  if (!markdown) throw new Error('Could not fetch DOE PDF via Firecrawl (all 5 Mondays failed)');
+
+  const prices = parseDoeMarkdown(markdown);
+  const cityCount = Object.keys(prices).length;
+
+  if (cityCount === 0) {
+    console.warn('[doe] Markdown sample:\n' + markdown.slice(0, 800));
+    throw new Error('DOE markdown parsing yielded no prices');
+  }
+
+  console.log(`[doe] Parsed ${cityCount} cities`);
+
+  // Cache for 7 days so subsequent runs don't hit Firecrawl again
+  await fetch(`${KV_URL}/pipeline`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify([['SET', KV_PFX + 'doe_ncr_week:' + weekKey, JSON.stringify(prices), 'EX', 604800]])
+  });
+
+  return prices;
 }
 
 // ── Groq (for fuel forecast) ──────────────────────────────────────────────────
@@ -787,20 +968,23 @@ async function scrapePower() {
 
 async function scrapeFuel() {
   const today = phDate();
-  const [gwResult, doeResult, forecastResult] = await Promise.allSettled([
+  const [gwResult, doeAdjResult, forecastResult, doeCityResult] = await Promise.allSettled([
     scrapeGasWatch(),
     scrapeDOEOilMonitor(),
-    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { console.log('[fuel] Groq raw:', raw.slice(0, 400)); const j = extractJSON(raw); return validateForecast(j.next_week_forecast, today); }).catch(e => { console.warn('[fuel] Groq forecast error:', e.message); return null; }) : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null))
+    GROQ_KEY ? groqSearch(buildForecastPrompt(today)).then(raw => { console.log('[fuel] Groq raw:', raw.slice(0, 400)); const j = extractJSON(raw); return validateForecast(j.next_week_forecast, today); }).catch(e => { console.warn('[fuel] Groq forecast error:', e.message); return null; }) : (console.warn('[fuel] Groq skipped — GROQ_API_KEY not set'), Promise.resolve(null)),
+    scrapeDoeNCRPrices()
   ]);
 
   const gwData       = gwResult.status === 'fulfilled' ? gwResult.value : null;
-  const doeAdj       = doeResult.status === 'fulfilled' ? doeResult.value : null;
+  const doeAdj       = doeAdjResult.status === 'fulfilled' ? doeAdjResult.value : null;
   const forecastData = forecastResult.status === 'fulfilled' ? forecastResult.value : null;
+  const doeCityData  = doeCityResult.status === 'fulfilled' ? doeCityResult.value : null;
+
   if (forecastData) console.log('[fuel] Forecast OK:', forecastData.signal, forecastData.source_url);
   else console.warn('[fuel] No valid forecast found');
-
   if (!gwData) { console.warn('[fuel] GasWatch failed:', gwResult.reason?.message); }
-  if (!doeAdj) console.warn('[fuel] DOE failed:', doeResult.reason?.message);
+  if (!doeAdj) console.warn('[fuel] DOE adj failed:', doeAdjResult.reason?.message);
+  if (!doeCityData) console.warn('[fuel] DOE city prices failed:', doeCityResult.reason?.message);
 
   if (!gwData) throw new Error('GasWatch unavailable — skipping fuel KV write');
 
@@ -812,25 +996,20 @@ async function scrapeFuel() {
     if (doeAdj.lpg_per_kg        && !adj.lpg_per_kg)        adj.lpg_per_kg        = doeAdj.lpg_per_kg;
   }
 
+  // DOE official data takes priority over GasWatch community-crowdsourced prices
+  const cityPrices = doeCityData && Object.keys(doeCityData).length > 0
+    ? doeCityData
+    : gwData.city_prices || {};
+
+  console.log(`[fuel] City prices source: ${doeCityData ? 'DOE (' + Object.keys(doeCityData).length + ' cities)' : 'GasWatch'}`);
+
   const result = {
     effective_date: today,
     week_label: `Week of ${today}`,
     doe_adjustment: adj,
     prices: gwData.prices,
     advisories: gwData.advisories || [],
-    city_prices: (() => {
-      try {
-        if (existsSync('doe_prices.json')) {
-          const doe = JSON.parse(readFileSync('doe_prices.json', 'utf8'));
-          if (Object.keys(doe).length > 0) {
-            // DOE prices are official weekly data — no delta correction needed
-            console.log(`[doe] Using DOE city prices: ${Object.keys(doe).length} cities`);
-            return doe;
-          }
-        }
-      } catch(e) { console.warn('[doe] Could not read doe_prices.json:', e.message); }
-      return gwData.city_prices || {};
-    })(),
+    city_prices: cityPrices,
     next_week_forecast: forecastData,
     trend_context: 'DOE official pump prices + GasWatch PH',
     next_week_signal: forecastData?.signal || null,
