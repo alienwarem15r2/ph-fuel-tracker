@@ -364,7 +364,7 @@ async function scrapeGasWatch() {
   // Only the array literal is passed to Function(), not the entire data.js file.
   let cityPrices = {};
   try {
-    const gsMatch = js.match(/var\s+GAS_STATIONS\s*=\s*\[/);
+    const gsMatch = js.match(/(?:var|const|let)\s+GAS_STATIONS\s*=\s*\[|GAS_STATIONS\s*=\s*\[/);
     if (!gsMatch) throw new Error('GAS_STATIONS declaration not found');
     const gsArrStart = js.indexOf('[', gsMatch.index);
     const gsArrBlock = extractBlock(js, gsArrStart);
@@ -561,7 +561,7 @@ async function fetchFFWSData() {
 // Fetch inline STATIONS variable from a GasWatch city page (e.g. /antipolo)
 async function scrapeGasWatchCityStations(url) {
   const html = await fetchHtml(url, 15000);
-  const match = html.match(/var\s+STATIONS\s*=\s*\[/);
+  const match = html.match(/(?:var|const|let)\s+STATIONS\s*=\s*\[|STATIONS\s*=\s*\[/);
   if (!match) throw new Error('STATIONS not found in ' + url);
   const arrStart = html.indexOf('[', match.index);
   const arrBlock = extractBlock(html, arrStart);
