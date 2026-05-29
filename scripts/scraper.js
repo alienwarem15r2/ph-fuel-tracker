@@ -382,6 +382,19 @@ async function scrapeGasWatch() {
     console.warn('[gaswatch] City prices parse failed:', e.message);
   }
 
+  // Fetch Antipolo separately — GasWatch city pages embed inline STATIONS variable
+  // Same structure as GAS_STATIONS in data.js; same delta correction applies
+  try {
+    const antipoloStations = await scrapeGasWatchCityStations('https://gaswatchph.com/antipolo');
+    if (Array.isArray(antipoloStations) && antipoloStations.length > 0) {
+      const antipoloCities = computeCityPrices(antipoloStations);
+      Object.assign(cityPrices, antipoloCities);
+      console.log(`[gaswatch] Antipolo: ${antipoloStations.length} stations`);
+    }
+  } catch(e) {
+    console.warn('[gaswatch] Antipolo stations failed:', e.message);
+  }
+
   // Advisories
   const advisories = [];
   try {
@@ -539,6 +552,19 @@ async function fetchFFWSData() {
 }
 
 // ── GasWatch City Price Aggregator ───────────────────────────────────────────
+
+// Fetch inline STATIONS variable from a GasWatch city page (e.g. /antipolo)
+async function scrapeGasWatchCityStations(url) {
+  const html = await fetchHtml(url, 15000);
+  const match = html.match(/var\s+STATIONS\s*=\s*\[/);
+  if (!match) throw new Error('STATIONS not found in ' + url);
+  const arrStart = html.indexOf('[', match.index);
+  const arrBlock = extractBlock(html, arrStart);
+  if (!arrBlock) throw new Error('Could not extract STATIONS array from ' + url);
+  // eslint-disable-next-line no-new-func
+  return new Function('return ' + arrBlock + ';')();
+}
+
 function computeCityPrices(stations) {
   const NORM   = { 'Parañaque': 'Paranaque', 'Las Piñas': 'Las Pinas' };
   const BRANDS = {
