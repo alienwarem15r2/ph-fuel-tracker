@@ -1391,7 +1391,7 @@ async function main() {
   // On Linux (GitHub Actions), prefer system Chrome to avoid Puppeteer download issues
   const sysChromes = ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
   const sysChrome  = sysChromes.find(p => existsSync(p));
-  const browser = await puppeteer.launch({
+  const browser = await puppeteerExtra.launch({
     executablePath: sysChrome || undefined,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     headless: true
