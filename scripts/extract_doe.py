@@ -8,7 +8,7 @@ import requests
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 HEADERS = {
     "User-Agent": (
@@ -61,7 +61,7 @@ def find_latest_pdf_url():
     is more permissive. DOE releases the NCR report every Monday.
     Try the last 5 Mondays until one responds 200.
     """
-    today = datetime.utcnow() + timedelta(hours=8)  # Philippine time
+    today = datetime.now(timezone.utc) + timedelta(hours=8)  # Philippine time
     # Walk back to the most recent Monday (weekday 0)
     days_back = today.weekday()  # 0=Mon already, 1=Tue→1 day back, etc.
     for extra_weeks in range(5):
