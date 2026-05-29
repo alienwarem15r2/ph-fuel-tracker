@@ -1025,9 +1025,7 @@ async function scrapeDoeNCRPrices() {
     console.log(`[doe] Trying Firecrawl: ${url}`);
     try {
       const fcData = await firecrawlScrapeData(url, 'doe', {
-        formats: ['markdown'],
-        waitFor: 6000,
-        actions: [{ type: 'wait', milliseconds: 5000 }]
+        formats: ['markdown']
       });
       const md = fcData.markdown || fcData.content || '';
       if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
