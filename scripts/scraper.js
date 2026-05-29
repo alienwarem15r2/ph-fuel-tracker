@@ -969,60 +969,90 @@ async function fetchDoeWithPuppeteer(pdfUrl) {
   ];
   const executablePath = sysChromes.find(p => existsSync(p));
   console.log(`[doe-puppet] Using Chrome: ${executablePath || 'puppeteer default'}`);
+
   const browser = await puppeteerExtra.launch({
     headless: true,
     executablePath: executablePath || undefined,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    args: [
+      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+      '--disable-gpu', '--disable-blink-features=AutomationControlled',
+      '--window-size=1920,1080'
+    ]
   });
+
   try {
     const page = await browser.newPage();
-    const origin = new URL(pdfUrl).origin; // https://prod-cms.doe.gov.ph
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
 
-    // Step 1: Visit the DOE root first so Cloudflare issues a clearance cookie
-    console.log(`[doe-puppet] Visiting ${origin} for CF clearance…`);
-    await page.goto(origin, { waitUntil: 'networkidle2', timeout: 30000 });
+    // Intercept the PDF binary directly — avoids Chrome's built-in PDF viewer
+    // which would prevent response.buffer() from working.
+    let pdfBuffer = null;
+    await page.setRequestInterception(true);
+    page.on('request', req => {
+      // Block images/fonts to speed up challenge page load
+      if (['image', 'font', 'media'].includes(req.resourceType())) req.abort();
+      else req.continue();
+    });
+    page.on('response', async res => {
+      const ct = res.headers()['content-type'] || '';
+      if (/pdf|octet/i.test(ct) && res.ok()) {
+        try { pdfBuffer = await res.buffer(); } catch(_) {}
+      }
+    });
 
-    // If Cloudflare challenge page, wait for it to auto-resolve
-    const title = await page.title();
-    if (/just a moment|cloudflare/i.test(title)) {
-      console.log('[doe-puppet] CF challenge detected, waiting for auto-resolve…');
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 25000 }).catch(() => {});
+    // Navigate directly to PDF — Cloudflare challenge fires here
+    console.log(`[doe-puppet] Navigating directly to PDF: ${pdfUrl}`);
+    const response = await page.goto(pdfUrl, { waitUntil: 'networkidle2', timeout: 50000 })
+      .catch(e => { console.warn(`[doe-puppet] goto warning: ${e.message}`); return null; });
+
+    // If CF challenge page, wait up to 30 s for it to auto-resolve & redirect
+    const title = await page.title().catch(() => '');
+    console.log(`[doe-puppet] Page title: "${title}"`);
+    if (/just a moment|cloudflare|attention required/i.test(title)) {
+      console.log('[doe-puppet] CF challenge — waiting 30 s for auto-resolve…');
+      await page.waitForFunction(
+        () => !document.title.toLowerCase().includes('just a moment'),
+        { timeout: 30000, polling: 1000 }
+      ).catch(() => {});
+      console.log(`[doe-puppet] Post-wait title: "${await page.title().catch(() => '')}"`);
     }
 
+    // Check if PDF was intercepted during navigation/redirect
+    if (pdfBuffer && pdfBuffer.length > 1000) {
+      console.log(`[doe-puppet] PDF intercepted: ${pdfBuffer.length} bytes`);
+      const parsed = await pdfParse(pdfBuffer);
+      console.log(`[doe-puppet] Parsed: ${parsed.text.length} chars, ${parsed.numpages} pages`);
+      return parsed.text;
+    }
+
+    // If not intercepted, try fetching with the clearance cookies
     const cookies = await page.cookies();
     const hasCF   = cookies.some(c => c.name === 'cf_clearance');
-    console.log(`[doe-puppet] Cookies: ${cookies.length} (cf_clearance: ${hasCF})`);
+    console.log(`[doe-puppet] Cookies after wait: ${cookies.length} (cf_clearance: ${hasCF})`);
 
-    // Step 2: Use clearance cookies + browser UA to fetch the PDF binary
     const ua        = await page.evaluate(() => navigator.userAgent);
     const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-
     const resp = await fetch(pdfUrl, {
       headers: {
-        'User-Agent': ua,
-        'Cookie':     cookieStr,
-        'Referer':    origin + '/',
-        'Accept':     'application/pdf,*/*'
+        'User-Agent': ua, 'Cookie': cookieStr,
+        'Referer': new URL(pdfUrl).origin + '/',
+        'Accept': 'application/pdf,*/*'
       },
       signal: AbortSignal.timeout(40000)
     });
 
     if (!resp.ok) throw new Error(`PDF HTTP ${resp.status}`);
-
     const ct = resp.headers.get('content-type') || '';
     if (!/pdf|octet/i.test(ct)) {
       const preview = await resp.text();
       if (/cloudflare|blocked|just a moment/i.test(preview))
-        throw new Error('Still Cloudflare blocked after clearance attempt');
-      throw new Error(`Unexpected content-type: ${ct} (${preview.slice(0, 80)})`);
+        throw new Error('Still CF-blocked after challenge wait');
+      throw new Error(`Unexpected content-type: ${ct} — ${preview.slice(0, 100)}`);
     }
-
     const buf = Buffer.from(await resp.arrayBuffer());
-    console.log(`[doe-puppet] PDF downloaded: ${buf.length} bytes`);
-
-    // Step 3: Extract text from the PDF buffer
+    console.log(`[doe-puppet] PDF via cookies: ${buf.length} bytes`);
     const parsed = await pdfParse(buf);
-    console.log(`[doe-puppet] PDF text: ${parsed.text.length} chars, ${parsed.numpages} pages`);
     return parsed.text;
   } finally {
     await browser.close();
