@@ -1042,13 +1042,13 @@ async function scrapeDoeNCRPrices() {
       });
       const md = fcData.markdown || fcData.content || '';
       if (/you have been blocked|enable cookies|cloudflare ray id/i.test(md)) {
-        const retryAfter = new Date(Date.now() + 6 * 3600000).toISOString();
+        const retryAfter = new Date(Date.now() + 24 * 3600000).toISOString();
         await fetch(`${KV_URL}/pipeline`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 21600]])
+          body: JSON.stringify([['SET', KV_PFX + failKey, retryAfter, 'EX', 86400]])
         });
-        console.warn('[doe] Firecrawl Cloudflare-blocked, cooldown set 6h');
+        console.warn('[doe] Firecrawl Cloudflare-blocked, cooldown set 24h');
         break;
       }
       if (md.length > 300) {
