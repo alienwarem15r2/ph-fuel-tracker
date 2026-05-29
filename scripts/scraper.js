@@ -3,7 +3,7 @@
 // Needs env: KV_REST_API_URL, KV_REST_API_TOKEN, GROQ_API_KEY (optional, for forecast)
 
 import puppeteer from 'puppeteer';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 
 // ── KV ──────────────────────────────────────────────────────────────────────
 const KV_URL   = process.env.KV_REST_API_URL;
@@ -818,9 +818,25 @@ async function scrapeFuel() {
     doe_adjustment: adj,
     prices: gwData.prices,
     advisories: gwData.advisories || [],
-    city_prices: gwData.city_prices || {},
+    city_prices: (() => {
+      try {
+        if (existsSync('doe_prices.json')) {
+          const doe = JSON.parse(readFileSync('doe_prices.json', 'utf8'));
+          if (Object.keys(doe).length > 0) {
+            // Preserve GasWatch petron baseline for delta correction, merge DOE on top
+            const merged = { ...doe };
+            if (gwData.city_prices?._petron_baseline) {
+              merged._petron_baseline = gwData.city_prices._petron_baseline;
+            }
+            console.log(`[doe] Using DOE city prices: ${Object.keys(doe).length} cities`);
+            return merged;
+          }
+        }
+      } catch(e) { console.warn('[doe] Could not read doe_prices.json:', e.message); }
+      return gwData.city_prices || {};
+    })(),
     next_week_forecast: forecastData,
-    trend_context: 'Live GasWatch PH data',
+    trend_context: 'DOE official pump prices + GasWatch PH',
     next_week_signal: forecastData?.signal || null,
     fill_up_advice: 'Prices are stable. Fill up based on your tank level and travel needs.',
     sources: ['gaswatchph.com (direct)', 'legacy.doe.gov.ph (direct)'],
