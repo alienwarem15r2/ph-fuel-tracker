@@ -17,9 +17,13 @@ DOE_PAGE = (
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; priceph-scraper/1.0)"}
 
 FUEL_MAP = {
-    "RON 91": "r91",
-    "RON 95": "r95",
-    "DIESEL":  "dsl",
+    "RON 100":     "ron100",
+    "RON 97":      "ron97",
+    "RON 95":      "r95",
+    "RON 91":      "r91",
+    "DIESEL":      "dsl",
+    "DIESEL PLUS": "dsl_plus",
+    "KEROSENE":    "kero",
 }
 
 # DOE city names → our normalized names

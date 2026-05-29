@@ -823,13 +823,9 @@ async function scrapeFuel() {
         if (existsSync('doe_prices.json')) {
           const doe = JSON.parse(readFileSync('doe_prices.json', 'utf8'));
           if (Object.keys(doe).length > 0) {
-            // Preserve GasWatch petron baseline for delta correction, merge DOE on top
-            const merged = { ...doe };
-            if (gwData.city_prices?._petron_baseline) {
-              merged._petron_baseline = gwData.city_prices._petron_baseline;
-            }
+            // DOE prices are official weekly data — no delta correction needed
             console.log(`[doe] Using DOE city prices: ${Object.keys(doe).length} cities`);
-            return merged;
+            return doe;
           }
         }
       } catch(e) { console.warn('[doe] Could not read doe_prices.json:', e.message); }

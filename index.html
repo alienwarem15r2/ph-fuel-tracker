@@ -279,7 +279,7 @@
           <button class="ftab" id="city-fuel-dsl" onclick="switchCityFuel('dsl',this)">Diesel</button>
         </div>
       </div>
-      <div id="city-price-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;"></div>
+      <div id="city-price-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;"></div>
       <p style="font-size:10px;color:#9e9d97;margin-top:10px;text-align:right;" id="city-source-note">
         Source: Searching GasWatch PH · DOE advisories · Live data
       </p>
@@ -1401,6 +1401,16 @@ function switchCityFuel(type, btn) {
 }
 function switchBrand(brand) { activeBrand = brand; buildCityPriceGrid(); }
 
+var CITY_PRODUCTS = [
+  { key: 'ron100',   label: 'RON 100'   },
+  { key: 'ron97',    label: 'RON 97'    },
+  { key: 'r95',      label: 'RON 95'    },
+  { key: 'r91',      label: 'RON 91'    },
+  { key: 'dsl',      label: 'Diesel'    },
+  { key: 'dsl_plus', label: 'Diesel+'   },
+  { key: 'kero',     label: 'Kerosene'  },
+];
+
 function buildCityPriceGrid() {
   var grid = document.getElementById('city-price-grid');
   if (!grid) return;
@@ -1424,40 +1434,55 @@ function buildCityPriceGrid() {
     return;
   }
 
-  var avg = liveData.fuel && liveData.fuel.prices && liveData.fuel.prices.petron
-    ? (activeCityFuel === 'r91' ? liveData.fuel.prices.petron.ron91 : activeCityFuel === 'r95' ? liveData.fuel.prices.petron.ron95 : liveData.fuel.prices.petron.diesel_std)
-    : NCR_AVG[activeCityFuel];
-
+  // Sort by lo of active fuel type (cheapest first)
   cities.sort(function(a, b) {
-    var pa = CITY_PRICES[a] && CITY_PRICES[a][activeCityFuel] ? CITY_PRICES[a][activeCityFuel].avg : 9999;
-    var pb = CITY_PRICES[b] && CITY_PRICES[b][activeCityFuel] ? CITY_PRICES[b][activeCityFuel].avg : 9999;
+    var da = CITY_PRICES[a] && CITY_PRICES[a][activeCityFuel];
+    var db = CITY_PRICES[b] && CITY_PRICES[b][activeCityFuel];
+    var pa = da ? (da.lo != null ? da.lo : da.avg || 9999) : 9999;
+    var pb = db ? (db.lo != null ? db.lo : db.avg || 9999) : 9999;
     return pa - pb;
   });
 
-  cities.forEach(function(city, idx) {
-    var d = CITY_PRICES[city] && CITY_PRICES[city][activeCityFuel] ? CITY_PRICES[city][activeCityFuel] : null;
-    if (!d) return;
-    var price = d.avg;
-    var diff = price - avg;
-    var isFirst = idx === 0;
+  // Track cheapest city for that fuel type
+  var cheapestCity = cities[0];
 
+  cities.forEach(function(city) {
+    var isFirst = city === cheapestCity && CITY_PRICES[city] && CITY_PRICES[city][activeCityFuel];
     var card = document.createElement('div');
-    var cardBg = isFirst ? '#e6f5ed' : 'var(--surface2)';
+    var cardBg   = isFirst ? '#e6f5ed' : 'var(--surface2)';
     var cardBorder = isFirst ? 'rgba(26,122,82,.2)' : 'var(--border)';
     card.style.cssText = 'background:' + cardBg + ';border-radius:var(--radius-sm);padding:10px 12px;border:1px solid ' + cardBorder + ';';
 
-    var diffText = Math.abs(diff) < 0.05 ? 'avg' : (diff > 0 ? '+₱' + diff.toFixed(2) : '−₱' + Math.abs(diff).toFixed(2));
-    var diffColor = diff > 0.3 ? '#b83232' : diff < -0.3 ? '#1a7a52' : '#888780';
-    var topBadge = isFirst ? '<span style="font-size:9px;font-weight:600;background:#1a7a52;color:#fff;padding:1px 5px;border-radius:3px;">CHEAPEST</span>' : '';
+    var badge = isFirst ? ' <span style="font-size:9px;font-weight:600;background:#1a7a52;color:#fff;padding:1px 5px;border-radius:3px;">CHEAPEST</span>' : '';
+    var rows = CITY_PRODUCTS.map(function(p) {
+      var d = CITY_PRICES[city] && CITY_PRICES[city][p.key];
+      var isActive = p.key === activeCityFuel;
+      var rowBg   = isActive ? 'background:rgba(26,122,82,.07);border-radius:3px;' : '';
+      var rowFw   = isActive ? 'font-weight:600;' : '';
+      var rowColor = isActive ? 'color:var(--text);' : 'color:var(--text3);';
+
+      var rangeText;
+      if (!d || (d.lo == null && d.hi == null && d.avg == null)) {
+        rangeText = '<span style="color:var(--text3);opacity:.4;">—</span>';
+      } else {
+        var lo = d.lo != null ? d.lo : d.avg;
+        var hi = d.hi != null ? d.hi : d.avg;
+        if (lo === hi) {
+          rangeText = '₱' + lo.toFixed(2);
+        } else {
+          rangeText = '₱' + lo.toFixed(2) + ' – ₱' + hi.toFixed(2);
+        }
+      }
+
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 4px;margin:1px 0;' + rowBg + '">' +
+        '<span style="font-size:10px;' + rowFw + rowColor + '">' + p.label + '</span>' +
+        '<span style="font-size:10px;font-family:\'DM Mono\',monospace;' + rowFw + rowColor + '">' + rangeText + '</span>' +
+        '</div>';
+    }).join('');
 
     card.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
-      '<span style="font-size:12px;font-weight:600;color:var(--text);">' + city + '</span>' + topBadge +
-      '</div>' +
-      '<div style="font-size:20px;font-weight:600;font-family:\'DM Mono\',monospace;letter-spacing:-0.5px;">₱' + price.toFixed(2) + '</div>' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">' +
-      '<span style="font-size:10px;color:var(--text3);">Lo: ₱' + d.lo.toFixed(2) + ' (' + d.cheapest + ')</span>' +
-      '<span style="font-size:11px;font-weight:500;color:' + diffColor + ';">' + diffText + '</span></div>';
+      '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;">' + city + badge + '</div>' +
+      rows;
     grid.appendChild(card);
   });
 }
