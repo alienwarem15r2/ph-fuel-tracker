@@ -793,7 +793,7 @@ async function scrapeGasWatchCityPrices() {
 
 // ── Firecrawl (for NGCP — residential proxies bypass NGCP's IP block) ────────
 const FIRECRAWL_KEY = process.env.FIRECRAWL_API_KEY;
-const FC_LIMITS = { ngcp: 20, manilawater: 8, doe: 4, doeadj: 4 }; // ngcp:~600/mo, mw:~240/mo, doe:~4/mo, doeadj:~60/mo (24h cache), total ~864/1000 credits
+const FC_LIMITS = { ngcp: 10, manilawater: 8, doe: 10, doeadj: 4 }; // ngcp:~600/mo, mw:~240/mo, doe:~4/mo, doeadj:~60/mo (24h cache), total ~864/1000 credits
 
 async function fcCount(key) {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
