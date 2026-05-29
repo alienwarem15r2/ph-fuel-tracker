@@ -250,10 +250,10 @@
 
     <!-- Summary cards (dynamically populated) -->
     <div class="summary-grid" id="summary-grid">
-      <div class="sum-card"><div class="sum-label">RON 91</div><div class="sum-price" id="s-r91">—</div><div class="sum-change flat" id="s-r91-chg">Loading…</div></div>
-      <div class="sum-card"><div class="sum-label">RON 95</div><div class="sum-price" id="s-r95">—</div><div class="sum-change flat" id="s-r95-chg">Loading…</div></div>
-      <div class="sum-card"><div class="sum-label">Diesel std</div><div class="sum-price" id="s-dsl">—</div><div class="sum-change flat" id="s-dsl-chg">Loading…</div></div>
-      <div class="sum-card"><div class="sum-label">Kerosene</div><div class="sum-price" id="s-kero">—</div><div class="sum-change flat" id="s-kero-chg">Loading…</div></div>
+      <div class="sum-card"><div class="sum-label">Diesel</div><div class="sum-price" id="s-dsl">—</div><div class="sum-change flat" id="s-dsl-chg">Loading…</div></div>
+      <div class="sum-card"><div class="sum-label">Prem. Diesel</div><div class="sum-price" id="s-dsl-prem">—</div><div class="sum-change flat" id="s-dsl-prem-chg">Loading…</div></div>
+      <div class="sum-card"><div class="sum-label">Unleaded 91</div><div class="sum-price" id="s-r91">—</div><div class="sum-change flat" id="s-r91-chg">Loading…</div></div>
+      <div class="sum-card"><div class="sum-label">Premium 95</div><div class="sum-price" id="s-r95">—</div><div class="sum-change flat" id="s-r95-chg">Loading…</div></div>
     </div>
 
     <!-- City-by-city fuel prices -->
@@ -919,15 +919,15 @@ function applyLiveFuelData(d) {
   if (p) {
     if (p.petron) {
       var r91 = p.petron.ron91; var r95 = p.petron.ron95;
-      var dsl = p.petron.diesel_std; var kero = p.petron.kerosene;
+      var dsl = p.petron.diesel_std; var dslPrem = p.petron.diesel_prem;
       var adj = d.doe_adjustment;
-      var g91 = adj && adj.gasoline_ron91_95 ? adj.gasoline_ron91_95 : '';
-      var dAdj = adj && adj.diesel_std ? adj.diesel_std : '';
+      var g91  = adj && adj.gasoline_ron91_95 ? adj.gasoline_ron91_95 : '';
+      var dAdj = adj && adj.diesel_std        ? adj.diesel_std        : '';
 
-      setCard('s-r91', r91, g91, 's-r91-chg');
-      setCard('s-r95', r95, g91, 's-r95-chg');
-      setCard('s-dsl', dsl, dAdj, 's-dsl-chg');
-      setCard('s-kero', kero, adj ? adj.kerosene : '', 's-kero-chg');
+      setCard('s-dsl',      dsl,     dAdj, 's-dsl-chg');
+      setCard('s-dsl-prem', dslPrem, dAdj, 's-dsl-prem-chg');
+      setCard('s-r91',      r91,     g91,  's-r91-chg');
+      setCard('s-r95',      r95,     g91,  's-r95-chg');
     }
 
     // 4. Update PRICES for calculator
