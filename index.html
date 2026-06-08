@@ -802,6 +802,46 @@ function setStatus(cls, msg) {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   SYNC HIST FROM LIVE DATA
+   Rebuilds chart history from weekly_prices (API) when available;
+   falls back to patching the last point with current live prices.
+   ══════════════════════════════════════════════════════════════ */
+function syncHIST(d) {
+  if (d && d.weekly_prices && d.weekly_prices.length >= 2) {
+    var wk = d.weekly_prices;
+    HIST.labels        = wk.map(function(e){ return e.label; });
+    HIST.petron_ron91  = wk.map(function(e){ return e.petron_r91; });
+    HIST.shell_ron91   = wk.map(function(e){ return e.shell_r91; });
+    HIST.unioil_ron91  = wk.map(function(e){ return e.unioil_r91; });
+    HIST.petron_ron95  = wk.map(function(e){ return e.petron_r95; });
+    HIST.shell_ron95   = wk.map(function(e){ return e.shell_r95; });
+    HIST.unioil_ron95  = wk.map(function(e){ return e.unioil_r95; });
+    HIST.petron_diesel = wk.map(function(e){ return e.petron_dsl; });
+    HIST.shell_diesel  = wk.map(function(e){ return e.shell_dsl; });
+    HIST.unioil_diesel = wk.map(function(e){ return e.unioil_dsl; });
+    return;
+  }
+  // Fallback: patch last point only
+  if (!d || !d.prices) return;
+  var p = d.prices, i = HIST.labels.length - 1;
+  if (p.petron) {
+    HIST.petron_ron91[i]  = p.petron.ron91      || HIST.petron_ron91[i];
+    HIST.petron_ron95[i]  = p.petron.ron95      || HIST.petron_ron95[i];
+    HIST.petron_diesel[i] = p.petron.diesel_std || HIST.petron_diesel[i];
+  }
+  if (p.shell) {
+    HIST.shell_ron91[i]  = p.shell.ron91      || HIST.shell_ron91[i];
+    HIST.shell_ron95[i]  = p.shell.ron95      || HIST.shell_ron95[i];
+    HIST.shell_diesel[i] = p.shell.diesel_std || HIST.shell_diesel[i];
+  }
+  if (p.unioil) {
+    HIST.unioil_ron91[i]  = p.unioil.ron91      || HIST.unioil_ron91[i];
+    HIST.unioil_ron95[i]  = p.unioil.ron95      || HIST.unioil_ron95[i];
+    HIST.unioil_diesel[i] = p.unioil.diesel_std || HIST.unioil_diesel[i];
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
    APPLY LIVE FUEL DATA TO UI
    ══════════════════════════════════════════════════════════════ */
 function applyLiveFuelData(d) {
@@ -942,26 +982,6 @@ function applyLiveFuelData(d) {
       PRICES.dsl = { petron: p.petron.diesel_std||79.90, shell: p.shell.diesel_std||83.79, lw_p: (p.petron.diesel_std||79.90)-parseFloat(adjD)||79.90, lw_s: (p.shell.diesel_std||83.79)-parseFloat(adjD)||83.79, adj: adjD+'/L', chgDir: adjD.startsWith('+') ? 'up':'down', label:'Diesel std' };
     }
 
-   // In applyLiveFuelData(), after step 4 (update PRICES for calculator):
-    // Add this new step 4.5:
-    
-    // 4.5 — Inject live prices into chart history
-    if (p && p.petron && p.shell) {
-      // Replace the last data point in each array with live prices
-      var lastIdx = HIST.labels.length - 1;
-      HIST.petron_ron91[lastIdx] = p.petron.ron91;
-      HIST.shell_ron91[lastIdx] = p.shell.ron91;
-      HIST.unioil_ron91[lastIdx] = p.unioil ? p.unioil.ron91 : HIST.unioil_ron91[lastIdx];
-      
-      HIST.petron_ron95[lastIdx] = p.petron.ron95;
-      HIST.shell_ron95[lastIdx] = p.shell.ron95;
-      HIST.unioil_ron95[lastIdx] = p.unioil ? p.unioil.ron95 : HIST.unioil_ron95[lastIdx];
-      
-      HIST.petron_diesel[lastIdx] = p.petron.diesel_std;
-      HIST.shell_diesel[lastIdx] = p.shell.diesel_std;
-      HIST.unioil_diesel[lastIdx] = p.unioil ? p.unioil.diesel_std : HIST.unioil_diesel[lastIdx];
-    }
-
     // 5. Update H2H table
     buildH2H(d);
 
@@ -1015,24 +1035,8 @@ function applyLiveFuelData(d) {
   }
 
   // 9. Re-run calculator and chart with live prices
-
-
- // 9.5 — Update chart with live prices before rendering
-  if (p && p.petron && p.shell) {
-    var lastIdx = HIST.labels.length - 1;
-    HIST.petron_ron91[lastIdx] = p.petron.ron91 || HIST.petron_ron91[lastIdx];
-    HIST.shell_ron91[lastIdx] = p.shell.ron91 || HIST.shell_ron91[lastIdx];
-    HIST.unioil_ron91[lastIdx] = (p.unioil && p.unioil.ron91) || HIST.unioil_ron91[lastIdx];
-    
-    HIST.petron_ron95[lastIdx] = p.petron.ron95 || HIST.petron_ron95[lastIdx];
-    HIST.shell_ron95[lastIdx] = p.shell.ron95 || HIST.shell_ron95[lastIdx];
-    HIST.unioil_ron95[lastIdx] = (p.unioil && p.unioil.ron95) || HIST.unioil_ron95[lastIdx];
-    
-    HIST.petron_diesel[lastIdx] = p.petron.diesel_std || HIST.petron_diesel[lastIdx];
-    HIST.shell_diesel[lastIdx] = p.shell.diesel_std || HIST.shell_diesel[lastIdx];
-    HIST.unioil_diesel[lastIdx] = (p.unioil && p.unioil.diesel_std) || HIST.unioil_diesel[lastIdx];
-  }
-   calc();
+  syncHIST(d);
+  calc();
   renderChart(curFuel);
 }
 
@@ -1276,29 +1280,6 @@ function renderChart(fuel) {
   var fm = FUEL_MAP[fuel];
   var ctx = document.getElementById('trendChart').getContext('2d');
   if (tChart) tChart.destroy();
-
-  // ── Inject live prices into the last data point ──
-  var lastIdx = HIST.labels.length - 1;
-  if (liveData.fuel && liveData.fuel.prices) {
-    var p = liveData.fuel.prices;
-    if (p.petron) {
-      HIST[fm.petron][lastIdx] = p.petron[fm.petron.replace('petron_','').replace('ron91','ron91').replace('ron95','ron95').replace('diesel','diesel_std')] || HIST[fm.petron][lastIdx];
-      // Cleaner mapping:
-      if (fuel === 'ron91')  HIST.petron_ron91[lastIdx]  = p.petron.ron91  || HIST.petron_ron91[lastIdx];
-      if (fuel === 'ron95')  HIST.petron_ron95[lastIdx]  = p.petron.ron95  || HIST.petron_ron95[lastIdx];
-      if (fuel === 'diesel') HIST.petron_diesel[lastIdx] = p.petron.diesel_std || HIST.petron_diesel[lastIdx];
-    }
-    if (p.shell) {
-      if (fuel === 'ron91')  HIST.shell_ron91[lastIdx]  = p.shell.ron91  || HIST.shell_ron91[lastIdx];
-      if (fuel === 'ron95')  HIST.shell_ron95[lastIdx]  = p.shell.ron95  || HIST.shell_ron95[lastIdx];
-      if (fuel === 'diesel') HIST.shell_diesel[lastIdx] = p.shell.diesel_std || HIST.shell_diesel[lastIdx];
-    }
-    if (p.unioil) {
-      if (fuel === 'ron91')  HIST.unioil_ron91[lastIdx]  = p.unioil.ron91  || HIST.unioil_ron91[lastIdx];
-      if (fuel === 'ron95')  HIST.unioil_ron95[lastIdx]  = p.unioil.ron95  || HIST.unioil_ron95[lastIdx];
-      if (fuel === 'diesel') HIST.unioil_diesel[lastIdx] = p.unioil.diesel_std || HIST.unioil_diesel[lastIdx];
-    }
-  }
 
   // ── Build location-aware annotation ──
   var regionLabel = activeRegion === 'ncr' ? 'Metro Manila (NCR) average' :

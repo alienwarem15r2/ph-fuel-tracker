@@ -310,6 +310,55 @@ async function scrapeGasWatch() {
   const phDeclMatch = js.match(/PRICE_HISTORY\s*=\s*\[/);
   if (!phDeclMatch) throw new Error('PRICE_HISTORY not found');
   const arrStart = js.indexOf('[', phDeclMatch.index);
+
+  // ── Parse ALL PRICE_HISTORY entries for the weekly trend chart ────────────
+  const weeklyPrices = [];
+  try {
+    const phArray = extractBlock(js, arrStart);
+    if (phArray) {
+      let pos = 1;
+      while (pos < phArray.length && weeklyPrices.length < 30) {
+        const ob = phArray.indexOf('{', pos);
+        if (ob === -1) break;
+        const entryBlock = extractBlock(phArray, ob);
+        if (!entryBlock) break;
+        // Try several label field names GasWatch may use
+        const lm = entryBlock.match(/(?:date|week|label|period|effectiveDate)\s*:\s*["'`]([^"'`\n]+)["'`]/i);
+        const entryLabel = lm ? lm[1] : null;
+        // Extract brands block
+        const bIdx = entryBlock.indexOf('brands');
+        const eBStart = bIdx !== -1 ? entryBlock.indexOf('{', bIdx) : -1;
+        const eBBlock = eBStart !== -1 ? extractBlock(entryBlock, eBStart) : null;
+        if (!eBBlock) { pos = ob + entryBlock.length; continue; }
+        const getEB = n => { const i = eBBlock.toLowerCase().indexOf(n.toLowerCase() + ':'); if (i === -1) return null; const s = eBBlock.indexOf('{', i); return s === -1 ? null : extractBlock(eBBlock, s); };
+        const epB = getEB('petron'), esB = getEB('shell'), euB = getEB('unioil');
+        const ep91 = epB ? grabNum(epB, 'unleaded') : 0;
+        const epDsl = epB ? grabNum(epB, 'diesel') : 0;
+        if (ep91 > 50 && ep91 < 200) {
+          const eS91 = esB ? grabNum(esB, 'unleaded') : 0;
+          const eU91 = euB ? grabNum(euB, 'unleaded') : 0;
+          weeklyPrices.push({
+            label:      entryLabel || ('Week ' + (weeklyPrices.length + 1)),
+            petron_r91: ep91,
+            shell_r91:  eS91,
+            unioil_r91: eU91,
+            petron_r95: Math.round((ep91 + 3.10) * 100) / 100,
+            shell_r95:  eS91 > 0 ? Math.round((eS91 + 3.10) * 100) / 100 : 0,
+            unioil_r95: eU91 > 0 ? Math.round((eU91 + 3.00) * 100) / 100 : 0,
+            petron_dsl: epDsl,
+            shell_dsl:  esB ? grabNum(esB, 'diesel') : 0,
+            unioil_dsl: euB ? grabNum(euB, 'diesel') : 0
+          });
+        }
+        pos = ob + entryBlock.length;
+      }
+    }
+    console.log(`[gaswatch] Parsed ${weeklyPrices.length} weekly history entries`);
+  } catch(e) { console.warn('[gaswatch] weekly history parse failed:', e.message); }
+  // PRICE_HISTORY[0] = most recent week → reverse so chart shows oldest→newest
+  const weeklyPricesAsc = weeklyPrices.slice().reverse();
+  // ─────────────────────────────────────────────────────────────────────────
+
   const weekBlock = extractBlock(js, js.indexOf('{', arrStart));
   if (!weekBlock) throw new Error('week block not found');
   const brandsStart = weekBlock.indexOf('{', weekBlock.indexOf('brands'));
@@ -465,6 +514,7 @@ async function scrapeGasWatch() {
     },
     adjustment: { gasoline_ron91_95: adjGasoline, diesel_std: adjDiesel, kerosene: adjKerosene, lpg_per_kg: adjLpg, note: 'GasWatch PH community + DOE data' },
     advisories,
+    weekly_prices: weeklyPricesAsc,
     city_prices: cityPrices
   };
 }
@@ -1243,6 +1293,7 @@ async function scrapeFuel() {
     week_label: `Week of ${today}`,
     doe_adjustment: adj,
     prices: gwData.prices,
+    weekly_prices: gwData.weekly_prices || [],
     advisories: gwData.advisories || [],
     city_prices: cityPrices,
     next_week_forecast: forecastData,
