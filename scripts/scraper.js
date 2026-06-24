@@ -395,7 +395,10 @@ async function scrapeGasWatch() {
   // Adjustment from advisory title
   function parseAdj(label) { const m = label.match(/([+\-−])\s*[₱]?\s*([0-9]+\.[0-9]+)/); if (!m) return null; return (m[1] === '+' ? '+' : '-') + parseFloat(m[2]).toFixed(2); }
   let adjGasoline = null, adjDiesel = null, adjKerosene = null, adjLpg = null;
-  const advPatterns = [/title\s*:\s*["'`]([^"'`]*(?:diesel|gasoline)[^"'`]*)["'`]/i, /["'`]([^"'`]*diesel[^"'`]*gasoline[^"'`]*)["'`]/i];
+  // NOTE: exclude only " and ` from the char class (NOT ') so apostrophes in the
+  // body — e.g. "this week's range at diesel −₱9.04..." — don't truncate the match
+  // before the explicitly-signed DOE range values.
+  const advPatterns = [/title\s*:\s*["`]([^"`]*(?:diesel|gasoline)[^"`]*)["`]/i, /["`]([^"`]*diesel[^"`]*gasoline[^"`]*)["`]/i];
   for (const pat of advPatterns) {
     const am = js.match(pat);
     if (!am) continue;
@@ -418,16 +421,33 @@ async function scrapeGasWatch() {
   if (!adjGasoline || !adjDiesel || isCumulative(adjGasoline) || isCumulative(adjDiesel)) {
     // Simple extractor: find keyword then within the same clause (before next comma/period)
     // look for rise/rollback direction and the first price number.
+    // Word-boundary the short words so substrings don't false-match
+    // (e.g. "rose" lives inside "ke·rose·ne", "fall" inside "rainfall").
+    const DEC = /(rollback|rolls?\s*back|decreas|\bfell\b|\bfall|\bdrop|reduc|\blower|\bcut\b|slash|\bdown)/i;
+    const INC = /(increas|hike|\brise|\brose\b|jump|climb|higher|\bup\b)/i;
     function bodyExtract(text, kw) {
-      // Grab the clause starting at the keyword up to the next ',' only
-      // (NOT '.') so decimal points like "2.82" stay inside the clause.
-      const clauseM = text.match(new RegExp(kw + '[^,]{0,80}', 'i'));
-      if (!clauseM) return null;
-      const clause = clauseM[0];
+      // 1) Prefer an explicitly-signed value adjacent to the keyword. The DOE
+      //    range in the body always carries real signs, e.g.
+      //    "gasoline −₱3.90 to −₱5.90" → -3.90 (low end = headline weekly move).
+      const signedM = text.match(new RegExp(kw + '\\s*([+\\-−])\\s*₱?\\s*(\\d+\\.\\d+)', 'i'));
+      if (signedM) return (signedM[1] === '+' ? '+' : '-') + signedM[2];
+
+      // 2) No explicit sign — take the first clause (up to next ',' so decimals
+      //    stay intact) for the NUMBER, then infer direction from a wider window
+      //    so a governing verb like "Big rollback ... gasoline ₱3.90" is caught.
+      const idx = text.search(new RegExp(kw, 'i'));
+      if (idx === -1) return null;
+      const clause = text.slice(idx).match(new RegExp(kw + '[^,]{0,80}', 'i'))[0];
       const numM = clause.match(/(\d+\.\d+)/);
       if (!numM) return null;
-      const sign = /(rollback|decreas|fall|drop|roll.?back)/i.test(clause) ? '-' : '+';
-      return sign + numM[1];
+      const ctx = text.slice(Math.max(0, idx - 140), idx) + ' ' + clause;
+      const dec = DEC.test(ctx), inc = INC.test(ctx);
+      if (dec && !inc) return '-' + numM[1];
+      if (inc && !dec) return '+' + numM[1];
+      // Ambiguous (both or neither in window): trust the clause-local signal.
+      if (DEC.test(clause)) return '-' + numM[1];
+      if (INC.test(clause)) return '+' + numM[1];
+      return '+' + numM[1];
     }
     for (const bm of js.matchAll(/body\s*:\s*["'`]((?:[^"'`\\]|\\.){30,800})["'`]/gi)) {
       const b = bm[1].replace(/\\n/g, ' ').replace(/\\t/g, ' ').replace(/\\'/g, "'");
