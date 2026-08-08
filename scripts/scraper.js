@@ -5,6 +5,8 @@
 import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { existsSync } from 'fs';
+import https from 'https';
+import tls from 'tls';
 
 puppeteerExtra.use(StealthPlugin());
 
@@ -665,15 +667,99 @@ function parsePAGASAFloodWatch(html) {
 // ── FFWS Scraper ──────────────────────────────────────────────────────────────
 const FFWS_BASE = 'https://pasig-marikina-tullahanffws.pagasa.dost.gov.ph';
 
+// The FFWS server serves an INCOMPLETE TLS chain — it sends only the leaf cert
+// (*.pagasa.dost.gov.ph) and omits the intermediate. Browsers recover by fetching
+// the intermediate via the leaf's AIA extension; Node does not, so plain fetch()
+// dies with UNABLE_TO_VERIFY_LEAF_SIGNATURE.
+//
+// Fix: supply the missing intermediate ourselves, alongside Node's normal root
+// store. Certificate verification stays FULLY ENABLED — we are completing the
+// chain, not bypassing it. The leaf must still be signed by this intermediate,
+// which must still be signed by GlobalSign Root R46 (already in Node's store).
+//
+// Public CA cert, no secret material. Source: the AIA URI in the leaf itself —
+// http://secure.globalsign.com/cacert/gsgccr46ovtlsca2025.crt
+// Subject: GlobalSign GCC R46 OV TLS CA 2025 · Issuer: GlobalSign Root R46
+// Valid: 2025-09-17 → 2029-06-23
+const GLOBALSIGN_R46_OV_TLS_2025 = `-----BEGIN CERTIFICATE-----
+MIIFfDCCA2SgAwIBAgIRAIRDWJCDb2c5QYLLnJpdyZ8wDQYJKoZIhvcNAQELBQAw
+RjELMAkGA1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExHDAaBgNV
+BAMTE0dsb2JhbFNpZ24gUm9vdCBSNDYwHhcNMjUwOTE3MDI1NTU2WhcNMjkwNjIz
+MDAwMDAwWjBUMQswCQYDVQQGEwJCRTEZMBcGA1UEChMQR2xvYmFsU2lnbiBudi1z
+YTEqMCgGA1UEAxMhR2xvYmFsU2lnbiBHQ0MgUjQ2IE9WIFRMUyBDQSAyMDI1MIIB
+IjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1JyrGiv+210Lw4LTp9qxx9WC
+o6w8HnxcTKr5XwR6WwtKidGXriLqGXtBINGTi4HUZ1Vl3FUIvscLwNcq2DRLwjWs
+cYFNClVnuSw4CtwAcfa7Iltz+0FmFeh/KOWv5BfgCxAo9FaeXRG725b2eedo/7fb
+0zBc6M/XcfQREVteZ6GovnLE96+T8RzRImvX38Y8vZoulp/XWv3p09C1pgp/53+1
+itDl7xbrM4sglGNkeJ5LBN2dOR1sqWCMZ/V4a4cPQwopBtZis1vVh7/k4S6Ysgk0
+CTi5vei0RSEIhxoFk48BHSXzTA4FJxqjfauYCZ4M5tmZ/R5VgXOZ4Ck/PifnXQID
+AQABo4IBVTCCAVEwDgYDVR0PAQH/BAQDAgGGMBMGA1UdJQQMMAoGCCsGAQUFBwMB
+MBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFGl0Pq/DWwGVSe4UQVqT+rEw
+mNqiMB8GA1UdIwQYMBaAFANcq3OBh6jMsKbVlOI2lkn/BZksMHsGCCsGAQUFBwEB
+BG8wbTAuBggrBgEFBQcwAYYiaHR0cDovL29jc3AuZ2xvYmFsc2lnbi5jb20vcm9v
+dHI0NjA7BggrBgEFBQcwAoYvaHR0cDovL3NlY3VyZS5nbG9iYWxzaWduLmNvbS9j
+YWNlcnQvcm9vdHI0Ni5jcnQwNgYDVR0fBC8wLTAroCmgJ4YlaHR0cDovL2NybC5n
+bG9iYWxzaWduLmNvbS9yb290cjQ2LmNybDAhBgNVHSAEGjAYMAgGBmeBDAECAjAM
+BgorBgEEAaAyCgECMA0GCSqGSIb3DQEBCwUAA4ICAQBEUTiKxe5jEintARUvLBm9
+qWZtGiOSV9E+3bntbFFBDBAroqwB6Cj53Zp/W08HwgxaPXdkVaRNYHB/eAatEtSm
+1ldtoorfPc+mVlzbwCwfbpIs2uqW5rF78ne37qy2o+iVnJptq9AzPnlC03+zhhB9
+JwmjUXVtPuqQZ96tFl0fAT77xGSLzCO8yfEDrxCqdWz2wneShSbCCsC15JB07OgO
+StE+MsVBkwe5+PNzAlAr8NZ6f8mzeY/FzaBzlhYw5+c1yyzXJqp+gjRXWrLpD3Ho
+hGOvIXIvCBnyVrYI/HPe6DR5w7oteui9Rt0xfUUudaTkt0iz7fc23eGboZ+bpvgT
+gbd/kYK6JOrxawMyfBYxrR5zDHIJX0Mws99DNgACKBUfFadKAfwFw0+0airY5WAI
+Xs8yhCb5XGwyzVpcB30BrQbWtqdI0PoE9usNvNbH3YFGfuS8oRmAJEgUUQnwOoGK
+jMWtHacw0n8QESdRM274LJvLd9nwawYU4svJpf06FtKPqGH3nXefL741NO9KzDAG
+PM11YScyJVfYdBDXFM86HU1fBGTKlkLcG/qMJxOqppY4wydRI3koSH6A78nO2QaJ
+yqjTOQyCNHaSlmGjdiOvhJ8y1PiazHnuvWBx6z+7JJF2ukqqfjlSARwyfkfnRUIY
+la7ZYEqcc56eoPAiElhvrg==
+-----END CERTIFICATE-----`;
+
+const ffwsAgent = new https.Agent({
+  ca: [...tls.rootCertificates, GLOBALSIGN_R46_OV_TLS_2025],
+  rejectUnauthorized: true,   // verification stays ON
+  keepAlive: false
+});
+
+// node:https GET → parsed JSON, using the chain-completing agent above.
+// (Node's fetch() can't take a custom CA without pulling in undici.)
+function ffwsGetJSON(url, timeoutMs = 12000) {
+  const headers = { Referer: FFWS_BASE + '/', 'User-Agent': BROWSER_HEADERS['User-Agent'] };
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { agent: ffwsAgent, headers, timeout: timeoutMs }, res => {
+      let d = '';
+      res.setEncoding('utf8');
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) return reject(new Error(`HTTP ${res.statusCode}`));
+        try { resolve(JSON.parse(d)); } catch(e) { reject(new Error('Bad JSON: ' + e.message)); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error(`timeout after ${timeoutMs}ms`)));
+    req.on('error', reject);
+  });
+}
+
 async function fetchFFWSData() {
-  const hdrs = { Referer: FFWS_BASE + '/', 'User-Agent': BROWSER_HEADERS['User-Agent'] };
-  const [wlRes, rfRes] = await Promise.all([
-    fetch(FFWS_BASE + '/water/main_list.do',    { headers: hdrs, signal: AbortSignal.timeout(10000) }),
-    fetch(FFWS_BASE + '/rainfall/main_list.do', { headers: hdrs, signal: AbortSignal.timeout(10000) })
+  const [wlSettled, rfSettled] = await Promise.allSettled([
+    ffwsGetJSON(FFWS_BASE + '/water/main_list.do'),
+    ffwsGetJSON(FFWS_BASE + '/rainfall/main_list.do')
   ]);
+  // Surface the real reason instead of silently returning [] — a cert-chain
+  // regression here is otherwise invisible and just blanks the UI.
+  for (const [name, s] of [['water', wlSettled], ['rainfall', rfSettled]]) {
+    if (s.status === 'rejected') {
+      const cause = s.reason?.cause?.code || s.reason?.code || '';
+      console.warn(`[ffws] ${name} fetch failed: ${s.reason?.message}${cause ? ' (' + cause + ')' : ''}`);
+      if (/UNABLE_TO_VERIFY|CERT|SELF_SIGNED/i.test(cause + s.reason?.message)) {
+        console.warn('[ffws] TLS chain problem — PAGASA may have rotated to a new CA. ' +
+                     'Refresh the bundled intermediate from the leaf\'s AIA URI.');
+      }
+    }
+  }
+  const wlRaw = wlSettled.status === 'fulfilled' && Array.isArray(wlSettled.value) ? wlSettled.value : [];
+  const rfRaw = rfSettled.status === 'fulfilled' && Array.isArray(rfSettled.value) ? rfSettled.value : [];
+  if (wlRaw.length === 0 && rfRaw.length === 0) throw new Error('FFWS returned no data (both endpoints failed)');
   const pfN = s => { if (s == null) return null; const n = parseFloat(String(s).replace(/[^0-9.-]/g, '')); return isNaN(n) ? null : n; };
-  const wlRaw = wlRes.ok ? await wlRes.json() : [];
-  const rfRaw = rfRes.ok ? await rfRes.json() : [];
 
   const stations = wlRaw.map(s => {
     const wl = pfN(s.wl), alertwl = pfN(s.alertwl), alarmwl = pfN(s.alarmwl), criticalwl = pfN(s.criticalwl);
