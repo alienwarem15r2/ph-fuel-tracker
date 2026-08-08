@@ -552,16 +552,30 @@ async function scrapeDOEOilMonitor() {
   }
 
   let text = null;
+  // NOTE: legacy.doe.gov.ph was decommissioned — it has NO DNS record at all, so
+  // every direct fetch died with ENOTFOUND and then fell through to Firecrawl,
+  // which of course also cannot resolve a host that doesn't exist. That silently
+  // burned the whole doeadj budget (4/day) on an unreachable URL every run.
+  // Repointed to the live site.
+  const OIL_MONITOR_URL = 'https://doe.gov.ph/oil-monitor';
+
   // Try direct fetch first (free); fall back to Firecrawl if blocked
   try {
-    const html = await fetchHtml('https://legacy.doe.gov.ph/oil-monitor', 8000);
+    const html = await fetchHtml(OIL_MONITOR_URL, 8000);
     text = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
                .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
     if (text.length < 200 || /403|forbidden/i.test(text)) throw new Error('Blocked or empty');
     console.log('[doe-adj] Direct fetch OK');
   } catch(e) {
+    // A DNS failure is unrecoverable — Firecrawl resolves the same public DNS we
+    // do, so spending a credit on an unresolvable host can never succeed. Bail
+    // out instead of paying for a guaranteed failure.
+    const dnsCode = e.cause?.code || e.code || '';
+    if (/ENOTFOUND|EAI_AGAIN/i.test(dnsCode)) {
+      throw new Error(`DOE Oil Monitor host unresolvable (${dnsCode}) — skipping Firecrawl`);
+    }
     console.log(`[doe-adj] Direct blocked (${e.message}), using Firecrawl…`);
-    const fcData = await firecrawlScrapeData('https://legacy.doe.gov.ph/oil-monitor', 'doeadj', { formats: ['markdown'] });
+    const fcData = await firecrawlScrapeData(OIL_MONITOR_URL, 'doeadj', { formats: ['markdown'] });
     text = fcData.markdown || fcData.content || '';
     if (!text || text.length < 100) throw new Error('Firecrawl returned empty content for DOE adj');
     if (/you have been blocked|enable cookies|cloudflare ray id/i.test(text)) {
@@ -1177,21 +1191,13 @@ async function scrapeDoeNCRPrices() {
 
   let markdown = null;
 
+  // The HEAD pre-check that used to sit here has been removed. It was meant to
+  // skip Firecrawl on 404s, but prod-cms no longer answers preflight requests at
+  // all — HEAD, ranged GET and plain GET every one time out with no status. So it
+  // always yielded 0, never skipped anything, and just added ~6s of dead latency
+  // per candidate (30s/run) before falling through to Firecrawl regardless.
   for (const url of pdfUrls) {
-    // Cheap HEAD check before burning a Firecrawl credit.
-    // From GitHub Actions, prod-cms returns 403 (CF-blocked, PDF exists) or 404 (not published).
-    // Only call Firecrawl for 403; skip 404s entirely.
-    let headStatus = 0;
-    try {
-      const hr = await fetch(url, { method: 'HEAD', headers: { 'User-Agent': BROWSER_HEADERS['User-Agent'] }, signal: AbortSignal.timeout(6000) });
-      headStatus = hr.status;
-    } catch(e) { headStatus = 0; }
-
-    if (headStatus === 404) { console.log(`[doe] ${url} → 404, skipping`); continue; }
-    if (headStatus === 200) { console.log(`[doe] ${url} → 200 direct! (unexpected from CI)`); }
-    // 403 or network error: fall through to Firecrawl
-
-    console.log(`[doe] Trying Firecrawl (HEAD=${headStatus}): ${url}`);
+    console.log(`[doe] Trying Firecrawl: ${url}`);
     try {
       const fcData = await firecrawlScrapeData(url, 'doe', {
         formats: ['markdown']
@@ -1406,7 +1412,7 @@ async function scrapeFuel() {
     trend_context: 'DOE official pump prices + GasWatch PH',
     next_week_signal: forecastData?.signal || null,
     fill_up_advice: 'Prices are stable. Fill up based on your tank level and travel needs.',
-    sources: ['gaswatchph.com (direct)', 'legacy.doe.gov.ph (direct)'],
+    sources: ['gaswatchph.com (direct)', 'doe.gov.ph (direct)'],
     _meta: { source: 'cron', cached_at: new Date().toISOString() }
   };
   console.log(`[fuel] RON91: ${gwData.prices.petron.ron91}, diesel: ${gwData.prices.petron.diesel_std}`);
